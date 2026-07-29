@@ -28,10 +28,11 @@
 //
 // WHY THIS SCRIPT SELF-FILTERS: VS Code parses a hook's `matcher` but does not
 // enforce it, so PreToolUse fires on EVERY tool call: reads, searches, edits.
-// The matcher in ../hooks/hooks.json is therefore documentation (and honored by
-// Claude Code), never a guarantee. RISKY_COMMAND below is the real gate, and the
-// pass-through path must stay allocation-light and do no I/O, because it runs
-// before every single tool the agent uses.
+// ../hooks/hooks.json therefore carries no matcher at all, because a matcher
+// there would be inert and would only read as a guarantee it cannot make.
+// RISKY_COMMAND below is the one and only gate, and the pass-through path must
+// stay allocation-light and do no I/O, because it runs before every single tool
+// the agent uses.
 //
 // Failure model: every handled path writes a decision and exits 0. Network and
 // parse errors fall back to "ask" (VS Code's own prompt), so it never silently
@@ -55,8 +56,8 @@ const POLICY_TIMEOUT_MS = 10_000
 const MODE_TIMEOUT_MS = 3_000
 const HARD_GUARD_MS = 55_000 // force a graceful "ask" before the 60s hook timeout
 
-// Which commands are worth a phone approval. Kept in sync with the `matcher` in
-// ../hooks/hooks.json, which Claude Code enforces and VS Code ignores.
+// Which commands are worth a phone approval. This is the only place the set is
+// defined; edit it here and nowhere else.
 const RISKY_COMMAND =
   /\brm\b|\brmdir\b|\bunlink\b|\bmkfs|\bdd\b|\bshutdown\b|\breboot\b|\bpkill\b|\bkillall\b|\bsystemctl\b|--force\b|force-push|reset --hard|\brebase\b|\bdrop\b|\bDROP\b|\btruncate\b|\bTRUNCATE\b|delete from|DELETE FROM|\bdeploy\b|\bpublish\b|\brelease\b|\bmigrate\b/
 

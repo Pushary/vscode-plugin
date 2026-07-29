@@ -100,7 +100,9 @@ There are two layers.
 
 ### Why the filtering lives in the script
 
-VS Code parses a hook's `matcher` but does not enforce it, so `PreToolUse` fires on every tool call the agent makes, including reads and searches. The `matcher` in `hooks/hooks.json` is therefore documentation (and is enforced by Claude Code, which can load this same directory). The real gate is `RISKY_COMMAND` in the script. If you want to change which commands need approval, edit the regex in the script and keep the matcher in sync.
+VS Code parses a hook's `matcher` but does not enforce it, so `PreToolUse` fires on every tool call the agent makes, including reads and searches. `hooks/hooks.json` therefore declares no matcher: one there would do nothing, and would only read as a promise the file cannot keep.
+
+The one and only gate is `RISKY_COMMAND` in `scripts/pushary-gate.mjs`. To change which commands need approval, edit that regex. Everything else returns immediately without touching the disk or the network.
 
 ## Failure behavior
 
@@ -108,9 +110,11 @@ Every path returns a decision. Network errors, a missing API key, and unparseabl
 
 ## Cross-tool compatibility
 
-This repository uses the `.claude-plugin/plugin.json` layout, which VS Code, GitHub Copilot CLI, and Claude Code all read. That is also what makes `${CLAUDE_PLUGIN_ROOT}` available in `hooks/hooks.json`, which the Copilot-format layout does not define.
+This repository uses the `.claude-plugin/plugin.json` layout, which VS Code, GitHub Copilot CLI, and Claude Code all detect. That is also what makes `${CLAUDE_PLUGIN_ROOT}` available in `hooks/hooks.json`, which the Copilot-format layout does not define.
 
-If you already run Pushary in Claude Code through `npx @pushary/agent-hooks setup`, do not also install this directory as a Claude Code plugin. Both would gate the same command and you would get two pushes.
+The layout is portable; this plugin is not meant to be. `hooks/hooks.json` uses VS Code's flat hook form, and the gate speaks VS Code's tool names, so treat this as a VS Code plugin that happens to sit in a portable folder shape.
+
+Claude Code users are served by `npx @pushary/agent-hooks setup --agents claude_code`, which installs a hook built for Claude Code's own tool names and matcher format. Do not install this directory as a Claude Code plugin as well: at best it duplicates the MCP server, and the two installs would fight over the same approvals.
 
 ## Development
 

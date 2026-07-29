@@ -4,7 +4,6 @@
       {
         "type": "command",
         "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
-        "matcher": "runTerminalCommand|runInTerminal|Bash|shell",
         "timeout": 60
       }
     ]
