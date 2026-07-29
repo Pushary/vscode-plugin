@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pushary": {
+      "type": "http",
+      "url": "https://pushary.com/api/mcp/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:PUSHARY_API_KEY}"
+      }
+    }
+  }
+}
