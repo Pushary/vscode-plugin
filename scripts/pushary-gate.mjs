@@ -291,20 +291,38 @@ const fetchModeState = async (apiKey, sessionId) => {
 // dependency-free hook cannot import the workspace) ───────────────────────────
 const ACTION_BODY_MAX = 4000
 const ACTION_BODY_TRUNCATION_MARKER = '\n… [truncated]'
+// Two tiers, mirroring SECRET_REDACTION_RULES in @pushary/contracts. The precise
+// rules only match real credential shapes, so they are safe on a line a human
+// reads: a git SHA, a path and prose all survive. The high-entropy catch-all
+// over-redacts by design and is therefore only ever applied to a full body dump.
+//
+// One combined list used to serve both, which meant the only text this gate
+// scrubbed was the action body. The question and the notification body carried
+// the raw command.
 const REDACTION_RULES = [
-  [/\bsk-[A-Za-z0-9]{20,}\b/g, '[redacted]'],
-  [/\bpk_(?:live|test)_[A-Za-z0-9]+\b/g, '[redacted]'],
-  [/\brk_[A-Za-z0-9]+\b/g, '[redacted]'],
+  [/-----BEGIN[A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z0-9 ]*PRIVATE KEY-----/g, '[redacted key]'],
+  [/\bsk-[A-Za-z0-9_-]{16,}\b/g, '[redacted]'],
+  [/\b[spr]k_(?:live|test)_[A-Za-z0-9]{8,}\b/g, '[redacted]'],
+  [/\bwhsec_[A-Za-z0-9]{16,}\b/g, '[redacted]'],
+  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b/g, '[redacted]'],
+  [/\bgithub_pat_[A-Za-z0-9_]{22,}\b/g, '[redacted]'],
+  [/\bglpat-[A-Za-z0-9_-]{20,}\b/g, '[redacted]'],
+  [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, '[redacted]'],
+  [/\bAIza[A-Za-z0-9_-]{35}\b/g, '[redacted]'],
   [/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]'],
-  [/\bbearer\s+[A-Za-z0-9._-]+/gi, 'bearer [redacted]'],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, '[redacted]'],
+  [/\bxai-[A-Za-z0-9]{16,}\b/g, '[redacted]'],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[redacted]'],
+  [/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'bearer [redacted]'],
   [/\bauthorization:\s*\S+/gi, 'authorization: [redacted]'],
-  [/((?:secret|token|password|passwd|api[_-]?key|private[_-]?key)\s*[=:]\s*)(\S+)/gi, '$1[redacted]'],
-  [/[A-Za-z0-9+/]{40,}={0,2}/g, '[redacted]'],
+  [/((?:secret|token|password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret|private[_-]?key)\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi, '$1[redacted]'],
 ]
+const HIGH_ENTROPY_RULE = [/[A-Za-z0-9+/]{40,}={0,2}/g, '[redacted]']
 const redactSecrets = (text) => REDACTION_RULES.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text)
+const redactSecretsDeep = (text) => redactSecrets(text).replace(HIGH_ENTROPY_RULE[0], HIGH_ENTROPY_RULE[1])
 const capActionBody = (text) =>
   text.length <= ACTION_BODY_MAX ? text : `${text.slice(0, ACTION_BODY_MAX - ACTION_BODY_TRUNCATION_MARKER.length)}${ACTION_BODY_TRUNCATION_MARKER}`
-const deriveActionBody = (command) => capActionBody(redactSecrets(command))
+const deriveActionBody = (command) => capActionBody(redactSecretsDeep(command))
 
 // VS Code's terminal tool has used more than one field name for the command, and
 // a plain `tool_input` object is not guaranteed. Read the known spellings and
@@ -327,9 +345,39 @@ export const shouldGate = (toolName, toolInput) => {
   return command
 }
 
+// ── network diagnosis ────────────────────────────────────────────────────────
+//
+// This gate is a dependency-free .mjs, so unlike the CLI it cannot install
+// undici's EnvHttpProxyAgent and its fetch ignores HTTP_PROXY entirely. Node
+// gained a native equivalent in 24 (NODE_USE_ENV_PROXY), but that is read at
+// startup, so a script cannot switch it on for itself.
+//
+// The gate already fails safe: any error here hands the decision to the editor's
+// own prompt. The cost is therefore not a blocked command, it is SILENCE. On a
+// corporate network every approval quietly stops reaching the phone and the only
+// trace is one stderr line nobody reads. So when a proxy is configured and the
+// network call fails, say which of those two it is.
+export const PROXY_VARS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
+
+export const proxyConfigured = (env = process.env) =>
+  PROXY_VARS.some(name => (env[name] ?? '').trim() !== '')
+
+export const describeNetworkFailure = (error, env = process.env) => {
+  const detail = error?.message ?? String(error)
+  if (!proxyConfigured(env)) return detail
+  const enabled = (env.NODE_USE_ENV_PROXY ?? '').trim() !== ''
+  if (enabled) return detail
+  return `${detail} (a proxy is set in HTTP_PROXY/HTTPS_PROXY and this hook cannot use it; on Node 24+ set NODE_USE_ENV_PROXY=1 in the editor's environment)`
+}
+
 // ── ask / wait ────────────────────────────────────────────────────────────────
+// Redacted, not raw. This is the text a human reads on a lock screen and in
+// Slack, and it used to be the command verbatim: `curl -H "Authorization:
+// Bearer ..."` left the machine and landed in the question. The server scrubs
+// this field too, but a credential should never travel to be scrubbed on
+// arrival, and the notify body below was scrubbed nowhere at all.
 const askArgs = (command, project, ident) => ({
-  question: `Allow this command?\n\n${command}`,
+  question: `Allow this command?\n\n${redactSecrets(command)}`,
   type: 'confirm',
   context: `VS Code agent wants to run this in ${project}`,
   agentName: ident.agentName,
@@ -426,7 +474,7 @@ const handleNotifyOnly = async (apiKey, command, project, ident) => {
   try {
     await callTool(apiKey, 'send_notification', {
       title: 'Agent needs approval',
-      body: command.slice(0, 180),
+      body: redactSecrets(command).slice(0, 180),
       agentName: ident.agentName,
       sessionId: ident.sessionId,
       machineId: ident.machineId,
@@ -494,7 +542,7 @@ const main = async () => {
         return respond(await handlePushFirst(apiKey, command, project, ident, tool.pushFirstSeconds))
     }
   } catch (error) {
-    diag(String(error?.message ?? error))
+    diag(describeNetworkFailure(error))
     return respond(ask())
   }
 }
@@ -502,7 +550,7 @@ const main = async () => {
 // Importing this file for its testable helpers must not consume stdin or exit.
 if (!process.env.PUSHARY_GATE_IMPORT) {
   main().catch((error) => {
-    diag(`fatal: ${error?.message ?? error}`)
+    diag(`fatal: ${describeNetworkFailure(error)}`)
     respond(ask())
   })
 }
