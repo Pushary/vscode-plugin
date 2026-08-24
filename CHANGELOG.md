@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.0
+
+The gate stopped carrying its own copy of the policy engine, and two defects went
+with it.
+
+It matched rules on tool NAME alone, so every argument rule was invisible: a
+`Bash(rm:*)` deny you had written did nothing here, and `rm -rf` was auto-approved
+by a broad `Bash` allow. The same bug was found and fixed in the Cursor gate in
+its 0.1.1; this copy still had it. It also had no safe read-only allowlist, so
+`git status` reached your phone.
+
+Its mode fetch read an unreachable server as "not halted", which is not the same
+thing as "we could not ask". A remote stop that could not be fetched looked like
+a clean bill of health.
+
+The gate now asks the server, which runs the same engine as every other client
+over the same state, and which distinguishes state it could not establish from
+state that says no.
+
+- Argument rules apply, with the same precedence every other agent uses.
+- The destructive ceiling applies: a command the classifier flags can no longer
+  be auto-approved through a broad rule.
+- A policy change takes effect immediately; the on-disk policy cache is gone.
+- An unreachable Pushary hands the command to VS Code's own prompt. Nothing is
+  ever denied because we could not reach the server.
+
 ## 0.1.0
 
 First release.

@@ -40,20 +40,17 @@
 // 60s timeout fires.
 
 import { createHash } from 'node:crypto'
-import { homedir, hostname, tmpdir } from 'node:os'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir, hostname } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const BASE_URL = process.env.PUSHARY_BASE_URL?.trim() || process.env.PUSHARY_API_URL?.trim() || 'https://pushary.com'
 const MCP_URL = `${BASE_URL}/api/mcp/mcp`
-const POLICY_CACHE_TTL_MS = 5 * 60 * 1000
 const MAX_BLOCK_MS = 45_000 // longest we can wait inside VS Code's hook timeout
 const WAIT_CHUNK_MS = 20_000 // per wait_for_answer long-poll
 const POLL_GAP_MS = 1_500 // pause between polls after a transient error
 const NET_TIMEOUT_MS = 27_000 // abort a single MCP request
-const POLICY_TIMEOUT_MS = 10_000
-const MODE_TIMEOUT_MS = 3_000
 const HARD_GUARD_MS = 55_000 // force a graceful "ask" before the 60s hook timeout
 
 // Which commands are worth a phone approval. This is the only place the set is
@@ -217,73 +214,63 @@ const callTool = async (apiKey, name, args) => {
   return JSON.parse(payload)
 }
 
-const getJson = async (path, apiKey, timeoutMs) => {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-    signal: AbortSignal.timeout(timeoutMs),
-  })
-  if (!response.ok) throw new Error(`GET ${path} ${response.status}`)
-  return response.json()
-}
+// ── The verdict ─────────────────────────────────────────────────────────────
+// Asked for, not worked out here.
+//
+// The copy this replaces matched on tool NAME alone: it looked for a rule whose
+// `tool` equalled "Bash", so every argument-scoped rule a user had written --
+// `Bash(rm:*)`, `Bash(git push)` -- was skipped entirely and the broad rule or
+// the default applied instead. A deny written to stop `rm -rf` did nothing here
+// while it worked in Claude Code and Cursor, and it never gained
+// `isSafeReadOnlyCommand` either, so `git status` reached the phone.
+//
+// Its mode fetch also read an unreachable server as `kill: false`, which is not
+// "you are not halted" but "we could not ask". A remote stop nobody could fetch
+// looked like a clean bill of health.
+//
+// The server now answers with the same `resolveGate` the CLI runs, over the same
+// state, and it distinguishes state it could not establish from state that says
+// no. This asks it.
 
-// ── Policy (mirrors @pushary/agent-hooks policy.ts) ───────────────────────────
-const isPolicyConfig = (d) =>
-  !!d && typeof d === 'object' && Array.isArray(d.policies) && typeof d.defaultTimeoutSeconds === 'number' && typeof d.defaultTimeoutAction === 'string'
+const GATE_TIMEOUT_MS = 5000
 
-const policyCacheFile = (apiKey) => join(tmpdir(), `pushary-policy-vscode-${createHash('sha256').update(apiKey).digest('hex').slice(0, 12)}.json`)
-
-const getPolicy = async (apiKey) => {
-  const path = policyCacheFile(apiKey)
-  let stale = null
-  if (existsSync(path)) {
-    try {
-      const cached = JSON.parse(readFileSync(path, 'utf-8'))
-      if (isPolicyConfig(cached)) {
-        if (!cached._cachedAt || Date.now() - cached._cachedAt < POLICY_CACHE_TTL_MS) return cached
-        stale = cached
-      }
-    } catch {}
-  }
+/**
+ * The verdict for one command, or null if we could not get one.
+ *
+ * Null is not a denial and not an approval: every failure hands the call back to
+ * VS Code's own prompt, exactly as if this gate were not installed.
+ *
+ * Sent as `cursor`, which is the wire's identity for an editor gate: a caller
+ * with a hard block budget and no hook config of its own. The only consequence
+ * is which policy profile answers, and a site without an explicit Cursor profile
+ * falls back to the all-agents one, which is what this gate already received.
+ *
+ * No `repoKey` is sent, because deriving one means walking parent directories
+ * for a `.git` and parsing its config, and a second implementation of that rule
+ * is how the last drift started. Without one the server correctly declines to
+ * apply repo-scoped rules, since an unknown repository is not evidence of a
+ * match -- which is what this gate already got, by being filtered server-side.
+ */
+const decide = async (apiKey, command, cwd, sessionId) => {
   try {
-    const fresh = await withRetry(async () => {
-      const raw = await getJson('/api/mcp/policy', apiKey, POLICY_TIMEOUT_MS)
-      if (!isPolicyConfig(raw)) throw new Error('invalid policy')
-      return raw
-    }, 2)
-    try {
-      writeFileSync(path, JSON.stringify({ ...fresh, _cachedAt: Date.now() }), 'utf-8')
-    } catch {}
-    return fresh
-  } catch (error) {
-    if (stale) return stale
-    throw error
-  }
-}
-
-const resolvePolicy = (config, toolName, modeOverride) => {
-  const base =
-    config.policies.find((p) => p.tool === toolName) ??
-    config.policies.find((p) => p.tool === '*') ??
-    {
-      tool: toolName,
-      timeoutSeconds: config.defaultTimeoutSeconds,
-      timeoutAction: config.defaultTimeoutAction,
-      mode: config.defaultMode ?? 'push_first',
-      pushFirstSeconds: config.defaultPushFirstSeconds ?? 20,
-    }
-  const effective = modeOverride ?? config.modeOverride
-  return effective ? { ...base, mode: effective } : base
-}
-
-const APPROVAL_MODES = ['push_only', 'terminal_only', 'push_first', 'notify_only']
-const fetchModeState = async (apiKey, sessionId) => {
-  try {
-    const path = sessionId ? `/api/mcp/mode?session=${encodeURIComponent(sessionId)}` : '/api/mcp/mode'
-    const data = await getJson(path, apiKey, MODE_TIMEOUT_MS)
-    const mode = data?.override?.mode
-    return { mode: APPROVAL_MODES.includes(mode) ? mode : null, kill: data?.kill === true }
+    const response = await fetch(`${BASE_URL}/api/agent/gate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        v: 1,
+        source: 'cursor',
+        toolName: 'Bash',
+        toolInputs: [{ command }],
+        cwd,
+        sessionId,
+      }),
+      signal: AbortSignal.timeout(GATE_TIMEOUT_MS),
+    })
+    if (!response.ok) return null
+    const verdict = await response.json()
+    return verdict && typeof verdict.kind === 'string' ? verdict : null
   } catch {
-    return { mode: null, kill: false }
+    return null
   }
 }
 
@@ -523,12 +510,17 @@ const main = async () => {
   const ident = { agentName: `VS Code - ${project}`, sessionId, machineId: getMachineId() }
 
   try {
-    const [policy, modeState] = await Promise.all([getPolicy(apiKey), fetchModeState(apiKey, sessionId)])
+    const verdict = await decide(apiKey, command, input.cwd, sessionId)
 
-    if (modeState.kill) return respond(deny('Stopped by user. This agent was halted from Pushary. Do not run this command.'))
+    // No verdict, or one that says nothing: VS Code's own prompt decides, exactly
+    // as if this gate were not installed. Never a forced denial on an outage.
+    if (!verdict || verdict.kind === 'no_opinion') return respond(ask())
+    if (verdict.kind === 'kill') return respond(deny(verdict.reason))
+    if (verdict.kind === 'allow') return respond(ALLOW)
+    if (verdict.kind === 'deny') return respond(deny(verdict.reason))
+    if (verdict.kind !== 'ask') return respond(ask())
 
-    const tool = resolvePolicy(policy, 'Bash', modeState.mode)
-    if (tool.timeoutSeconds === 0 && tool.timeoutAction === 'approve') return respond(ALLOW)
+    const tool = verdict.policy
 
     switch (tool.mode) {
       case 'terminal_only':
