@@ -51,6 +51,7 @@ const MAX_BLOCK_MS = 45_000 // longest we can wait inside VS Code's hook timeout
 const WAIT_CHUNK_MS = 20_000 // per wait_for_answer long-poll
 const POLL_GAP_MS = 1_500 // pause between polls after a transient error
 const NET_TIMEOUT_MS = 27_000 // abort a single MCP request
+const WITHDRAW_TIMEOUT_MS = 4_000
 const HARD_GUARD_MS = 55_000 // force a graceful "ask" before the 60s hook timeout
 
 // Which commands are worth a phone approval. This is the only place the set is
@@ -194,7 +195,7 @@ const parseMcpBody = (body, contentType) => {
   return JSON.parse(body)
 }
 
-const callTool = async (apiKey, name, args) => {
+const callTool = async (apiKey, name, args, timeoutMs = NET_TIMEOUT_MS) => {
   const response = await fetch(MCP_URL, {
     method: 'POST',
     headers: {
@@ -203,7 +204,7 @@ const callTool = async (apiKey, name, args) => {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: 'tools/call', params: { name, arguments: args } }),
-    signal: AbortSignal.timeout(NET_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   const text = await response.text()
   if (!response.ok) throw new Error(`Pushary MCP ${response.status}`)
@@ -397,6 +398,33 @@ const fromTimeoutAction = (action, deniedReason) =>
 
 const DENIED = 'The user denied this command via a Pushary push approval. Do not run it. Propose an alternative or ask how to proceed.'
 
+const fromAnswer = (answer) => {
+  if (answer.value === 'defer') return ask()
+  return answer.value === 'yes' ? ALLOW : deny(DENIED)
+}
+
+const withdrawQuestion = async (apiKey, correlationId) => {
+  const unanswered = { answered: false }
+  let cancelled
+  try {
+    cancelled = await callTool(apiKey, 'cancel_question', { correlationId }, WITHDRAW_TIMEOUT_MS)
+  } catch {
+    return unanswered
+  }
+  if (cancelled?.cancelled !== false || cancelled?.status === 'unavailable') return unanswered
+  try {
+    const answer = await callTool(apiKey, 'wait_for_answer', { correlationId, timeoutMs: 1_000 }, WITHDRAW_TIMEOUT_MS)
+    return answer?.answered ? answer : unanswered
+  } catch {
+    return unanswered
+  }
+}
+
+const handedOff = (asked) => asked.suppressed || asked.status === 'terminal'
+
+const handoffMessage = (asked) =>
+  asked.suppressed ? 'You are at the keyboard, approve here.' : 'Delivery mode is Terminal, approve here.'
+
 // push_only: wait up to the policy timeout, then apply the timeout action.
 const handlePushOnly = async (apiKey, command, project, ident, timeoutSeconds, timeoutAction) => {
   let asked
@@ -409,21 +437,24 @@ const handlePushOnly = async (apiKey, command, project, ident, timeoutSeconds, t
 
   // Keyboard bypass: the user is at the keyboard, so VS Code's own prompt is the
   // faster channel.
-  if (asked.suppressed) {
-    await callTool(apiKey, 'cancel_question', { correlationId: asked.correlationId }).catch(() => {})
-    return ask('You are at the keyboard, approve here.')
+  if (handedOff(asked)) {
+    const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (late.answered) return fromAnswer(late)
+    return ask(handoffMessage(asked))
   }
   if (asked.noDevices) {
+    const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (late.answered) return fromAnswer(late)
     return fromTimeoutAction(timeoutAction, 'No device connected to approve on; denied per your Pushary policy.')
   }
 
   const realMs = timeoutAction === 'wait' ? MAX_BLOCK_MS : Math.max(timeoutSeconds, 1) * 1000
   const cap = Math.min(realMs, MAX_BLOCK_MS)
   const answer = await pollForAnswer(apiKey, asked.correlationId, Date.now() + cap)
-  if (answer.answered) {
-    if (answer.value === 'defer') return ask()
-    return answer.value === 'yes' ? ALLOW : deny(DENIED)
-  }
+  if (answer.answered) return fromAnswer(answer)
+
+  const late = await withdrawQuestion(apiKey, asked.correlationId)
+  if (late.answered) return fromAnswer(late)
 
   // If VS Code's hook limit cut us off before the configured timeout, hand off to
   // VS Code's own prompt rather than misapplying the policy's timeout action.
@@ -441,20 +472,27 @@ const handlePushFirst = async (apiKey, command, project, ident, pushFirstSeconds
   }
   if (!asked?.correlationId) return ask()
 
-  if (asked.suppressed) {
-    await callTool(apiKey, 'cancel_question', { correlationId: asked.correlationId }).catch(() => {})
-    return ask('You are at the keyboard, approve here.')
+  if (handedOff(asked)) {
+    const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (late.answered) return fromAnswer(late)
+    return ask(handoffMessage(asked))
   }
-  if (asked.noDevices) return ask('No device connected, approve here.')
+  if (asked.noDevices) {
+    const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (late.answered) return fromAnswer(late)
+    return ask('No device connected, approve here.')
+  }
 
   const cap = Math.min(Math.max(pushFirstSeconds, 1) * 1000, MAX_BLOCK_MS)
   const answer = await pollForAnswer(apiKey, asked.correlationId, Date.now() + cap)
-  if (answer.answered) {
-    if (answer.value === 'defer') return ask()
-    return answer.value === 'yes' ? ALLOW : deny(DENIED)
-  }
-  return ask('Sent to your phone via Pushary, you can also approve here.')
+  if (answer.answered) return fromAnswer(answer)
+
+  const late = await withdrawQuestion(apiKey, asked.correlationId)
+  if (late.answered) return fromAnswer(late)
+  return ask('No answer from your phone in time, so the request was withdrawn there. Approve here.')
 }
+
+export { handlePushOnly, handlePushFirst, withdrawQuestion }
 
 // notify_only: fire an awareness notification, let VS Code's prompt decide.
 const handleNotifyOnly = async (apiKey, command, project, ident) => {
