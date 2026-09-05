@@ -1,28 +1,40 @@
 # Contributing
 
-Thanks for looking. Please read this before opening a pull request, because of
-where this code lives.
+Bug reports, documentation fixes, runnable examples, and patches are welcome.
+Open an issue in this public repository, or fork it and open a pull request here.
+You do not need access to Pushary's private repository to contribute.
 
-**This repository is a published copy, not the place the code is written.** The
-source is a directory inside Pushary's private monorepo, and it is pushed here
-whenever it changes. Anything committed directly to this repo is overwritten by
-the next publish.
+## Start small
 
-That is not hypothetical. Two pull requests were merged here and then sat
-stranded for a month, because nothing carried them back upstream and the next
-publish would have deleted them.
+Pick an unassigned `good first issue`, explain the change you plan, and include
+steps that another developer can use to verify it. For a bug, include the package
+and framework versions, your OS, expected behavior, and a minimal reproduction.
+Never include API keys, enrollment links, customer data, or private transcripts.
 
-## So what should you do
+For a JavaScript adapter, run `npm install`, `npm run typecheck`, `npm test`, and
+`npm run build` in your clone. Follow the README for Python or plugin-specific
+setup. Documentation changes should have working links and commands you tried.
 
-**Open an issue.** Bugs, missing behaviour, a patch you have already written and
-want applied: an issue is read and acted on, and the fix is made upstream and
-published here. Paste your diff into the issue if you have one, and it will be
-credited.
+## How your patch ships
 
-**Security issues**: email aadil@pushary.com rather than opening an issue.
+This repository is a public mirror of a directory in Pushary's private monorepo.
+We review your PR here, then apply accepted changes upstream before publishing
+this mirror. A direct merge into the mirror could be overwritten by the next sync.
 
-## If you do open a pull request
+The maintainer handling your PR will:
 
-It will not be merged as a pull request, because merging it would guarantee it
-gets erased. It will be treated as a patch submission: applied upstream, and
-this repo updated on the next publish. You will be told when that has happened.
+1. Review the patch and discuss requested changes in the public PR.
+2. Apply accepted changes upstream, retaining author attribution in that commit.
+3. Run the relevant checks, release a package if needed, and sync this repository.
+4. Link the public sync commit and released version (when applicable) back to your
+   PR, credit your contribution publicly, then close it as shipped.
+
+Public sync commits squash private history, so upstream author attribution does
+not automatically appear in this mirror's GitHub contributor graph. The public
+PR and shipping comment preserve visible credit. An upstream-only patch is not
+considered shipped. If we cannot accept a change, we explain why on the PR.
+
+## Security
+
+Report vulnerabilities privately to aadil@pushary.com instead of opening a public
+issue. If this repository has a SECURITY.md, follow its disclosure guidance.
