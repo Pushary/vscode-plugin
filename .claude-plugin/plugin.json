@@ -1,7 +1,7 @@
 {
   "name": "pushary",
   "description": "Push notifications, human-in-the-loop questions, and permission gating for your AI agent. Get a push when a task finishes, answer the agent from your phone, and approve risky commands before they run.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Pushary",
     "email": "business@pushary.com",
