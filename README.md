@@ -18,9 +18,9 @@ There are three things.
 
 1. Notify. The agent sends a push when a long task finishes, or when a build, test, or deploy fails. The push can include what changed, the error, and suggested next steps.
 
-2. Ask. The agent asks you questions through push: yes or no, multiple choice, or free text. It waits for your answer. When Pushary is connected, the agent sends its questions to your phone instead of waiting in the chat panel.
+2. Ask. The agent asks you questions through push: yes or no, multiple choice, or free text. It waits for your answer. The bundled skill guides the agent to use Pushary for questions. Native VS Code question dialogs are not automatically intercepted.
 
-3. Gate. Risky terminal commands (like rm, force push, history rewrites, database drops, deploys, and systemctl) are checked before they run. What happens is set by your Pushary dashboard policy: auto approve trusted commands, push to your phone for approval, or just notify. If you do not answer in time, it falls back to VS Code's own approval prompt, so nothing dangerous runs silently.
+3. Gate. Every named tool reaches your Pushary policy before execution, including terminal commands, file edits, patches, and MCP calls. Standing rules are evaluated before safe-command handling. The policy can approve, deny, or ask; cancellation stops the action. Pushary’s own MCP tools are exempt so answering cannot deadlock.
 
 ## Requirements
 
@@ -66,7 +66,7 @@ Clone this repository, then add the absolute path to your VS Code `settings.json
 }
 ```
 
-However you install it, Pushary talks to the same server, so the plugin and the CLI give you the same setup.
+The source plugin and CLI installer use the same decision service. The Mac app can install a native bridge that also carries queued messages back through supported hook responses.
 
 ## Set your API key
 
@@ -87,22 +87,14 @@ Install the Pushary app on your phone (or turn on web push) so the agent can rea
 |------|------|--------------|
 | MCP server | `.mcp.json` | Connects VS Code to the Pushary tools: `send_notification`, `ask_user`, `wait_for_answer`, `cancel_question` |
 | Skill | `skills/pushary/SKILL.md` | Full tool reference: parameters, examples, return values, and the proactive-use guidance |
-| Hook | `hooks/hooks.json` and `scripts/pushary-gate.mjs` | Sends risky commands to your phone for approval |
+| Hook | `hooks/hooks.json` and `scripts/pushary-gate.mjs` | Evaluates tool approvals and reports session/tool activity |
 | Commands | `commands/` | `/pushary-test` and `/notify-when-done` |
 
 ## How the gate decides
 
-There are two layers.
+VS Code currently ignores hook matchers, so the script sends every named tool to policy evaluation. Host aliases such as `run_in_terminal`, `create_file`, and `apply_patch` are normalized by the shared service; third-party `mcp_` IDs are retained because their server boundaries cannot safely be reconstructed from underscores.
 
-1. `RISKY_COMMAND` in `scripts/pushary-gate.mjs` decides which commands get checked at all. Everything else passes straight through with no disk or network access.
-
-2. Your Pushary dashboard policy decides what happens to a checked command, per tool: auto approve, the approval mode (push and wait, push then prompt, notify only, or prompt only), the timeout action, a live mode override, and the kill switch. This is the same policy your other Pushary agents use, so behavior stays the same across agents.
-
-### Why the filtering lives in the script
-
-VS Code parses a hook's `matcher` but does not enforce it, so `PreToolUse` fires on every tool call the agent makes, including reads and searches. `hooks/hooks.json` therefore declares no matcher: one there would do nothing, and would only read as a promise the file cannot keep.
-
-The one and only gate is `RISKY_COMMAND` in `scripts/pushary-gate.mjs`. To change which commands need approval, edit that regex. Everything else returns immediately without touching the disk or the network.
+Lifecycle hooks report session starts, turn completion, tool results, compaction, and subagent activity. Timeout approval requires the configured wait to have elapsed; cancellation or unverifiable withdrawal denies the action. Stable and Insiders registrations are supported locally. Remote hosts and additional profiles require their own installation.
 
 ## Failure behavior
 

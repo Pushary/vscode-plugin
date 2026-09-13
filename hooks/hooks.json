@@ -6,6 +6,55 @@
         "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
         "timeout": 60
       }
+    ],
+    "PostToolUse": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "PreCompact": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "SubagentStart": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
+        "timeout": 10,
+        "type": "command"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pushary-gate.mjs\"",
+        "timeout": 10,
+        "type": "command"
+      }
     ]
   }
 }

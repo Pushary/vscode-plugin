@@ -1,45 +1,8 @@
 #!/usr/bin/env node
-// Pushary gate — VS Code `PreToolUse` agent hook.
-//
-// Routes risky terminal commands through your Pushary permission policy before
-// they run. What HAPPENS to a matched command is decided by your dashboard
-// policy (the same policy the @pushary/agent-hooks CLI uses for Claude Code), so
-// behavior is consistent across agents.
-//
-// It honors, per tool ("Bash"): auto-approve, the four approval modes
-// (push_only / push_first / notify_only / terminal_only), the timeout action
-// (approve / deny / escalate), a live mode override, and the kill switch, all
-// scoped to the VS Code chat session. Policy is cached in the temp dir for 5
-// minutes with a stale-fallback, and requests retry.
-//
-// Self-contained: no dependencies, uses the global fetch (Node 18+).
-//
-// Contract (https://code.visualstudio.com/docs/agent-customization/hooks):
-//   stdin  : { "hook_event_name": "PreToolUse", "tool_name": string,
-//              "tool_input": object, "cwd": string, "session_id": string, ... }
-//   stdout : { "continue": true }                                  (not our business)
-//            { "hookSpecificOutput": { "hookEventName": "PreToolUse",
-//                "permissionDecision": "allow" | "deny" | "ask",
-//                "permissionDecisionReason"?: string } }
-//
-// `hookEventName` is redundant for VS Code but required by Claude Code, which
-// can load this same plugin directory. Emitting it keeps one script valid for
-// both.
-//
-// WHY THIS SCRIPT SELF-FILTERS: VS Code parses a hook's `matcher` but does not
-// enforce it, so PreToolUse fires on EVERY tool call: reads, searches, edits.
-// ../hooks/hooks.json therefore carries no matcher at all, because a matcher
-// there would be inert and would only read as a guarantee it cannot make.
-// RISKY_COMMAND below is the one and only gate, and the pass-through path must
-// stay allocation-light and do no I/O, because it runs before every single tool
-// the agent uses.
-//
-// Failure model: every handled path writes a decision and exits 0. Network and
-// parse errors fall back to "ask" (VS Code's own prompt), so it never silently
-// allows a risky command. A 55s hard guard guarantees output before the hook's
-// 60s timeout fires.
+// Pushary VS Code hooks: server policy, fenced phone approvals, and lifecycle telemetry.
+// Dependency-free for marketplace installs. Regenerate agent-hooks/data after edits.
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { homedir, hostname } from 'node:os'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -56,9 +19,6 @@ const HARD_GUARD_MS = 55_000 // force a graceful "ask" before the 60s hook timeo
 
 // Which commands are worth a phone approval. This is the only place the set is
 // defined; edit it here and nowhere else.
-const RISKY_COMMAND =
-  /\brm\b|\brmdir\b|\bunlink\b|\bmkfs|\bdd\b|\bshutdown\b|\breboot\b|\bpkill\b|\bkillall\b|\bsystemctl\b|--force\b|force-push|reset --hard|\brebase\b|\bdrop\b|\bDROP\b|\btruncate\b|\bTRUNCATE\b|delete from|DELETE FROM|\bdeploy\b|\bpublish\b|\brelease\b|\bmigrate\b/
-
 // VS Code, Copilot CLI and Claude Code each name the terminal tool differently,
 // and the name has changed across VS Code releases. Matching a normalized form
 // of every spelling we have seen is what keeps the gate working after an upgrade
@@ -91,6 +51,7 @@ const ALLOW = decision('allow')
 const ask = (reason) => decision('ask', reason)
 const deny = (reason) => decision('deny', reason)
 
+let activeQuestion
 let done = false
 const respond = (result) => {
   if (done) return
@@ -252,16 +213,17 @@ const GATE_TIMEOUT_MS = 5000
  * apply repo-scoped rules, since an unknown repository is not evidence of a
  * match -- which is what this gate already got, by being filtered server-side.
  */
-const decide = async (apiKey, command, cwd, sessionId) => {
+const decide = async (apiKey, command, cwd, sessionId, ident = {}) => {
   try {
     const response = await fetch(`${BASE_URL}/api/agent/gate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         v: 1,
-        source: 'cursor',
-        toolName: 'Bash',
-        toolInputs: [{ command }],
+        source: 'vscode',
+        toolName: ident.toolName ?? 'Bash',
+        toolInputs: ident.toolInputs ?? [{ command }],
+        repoKey: deriveRepoKey(cwd),
         cwd,
         sessionId,
       }),
@@ -272,6 +234,91 @@ const decide = async (apiKey, command, cwd, sessionId) => {
     return verdict && typeof verdict.kind === 'string' ? verdict : null
   } catch {
     return null
+  }
+}
+
+const REPO_KEY_MAX_LENGTH = 200
+const MAX_PARENT_WALK = 64
+
+const normalizeRepoRemote = (remoteUrl) => {
+  const raw = (remoteUrl || '').trim()
+  if (!raw) return undefined
+  let hostAndPath
+  const scp = /^[A-Za-z0-9._-]+@([A-Za-z0-9._-]+):(.+)$/.exec(raw)
+  if (scp) {
+    hostAndPath = `${scp[1]}/${scp[2]}`
+  } else {
+    const url = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(.+)$/.exec(raw)
+    if (!url || /^file:/i.test(raw)) return undefined
+    hostAndPath = url[1]
+  }
+  const slash = hostAndPath.indexOf('/')
+  if (slash <= 0) return undefined
+  const at = hostAndPath.slice(0, slash).lastIndexOf('@')
+  // Credentials must never survive: a remote can carry a token and this value is
+  // sent to the server and persisted.
+  const host = (at === -1 ? hostAndPath.slice(0, slash) : hostAndPath.slice(at + 1, slash)).replace(/:\d+$/, '')
+  const path = hostAndPath.slice(slash + 1).split('/').filter(Boolean).join('/')
+  if (!host || !path) return undefined
+  return `${host}/${path}`.replace(/\.git$/i, '').toLowerCase().slice(0, REPO_KEY_MAX_LENGTH)
+}
+
+const findGitDir = (startDir) => {
+  let current = startDir
+  for (let depth = 0; depth < MAX_PARENT_WALK; depth += 1) {
+    const candidate = join(current, '.git')
+    try {
+      if (existsSync(candidate)) {
+        const pointer = readFileSync(candidate, 'utf-8').trim()
+        // A directory read throws EISDIR, which is the ordinary-clone case.
+        if (pointer.startsWith('gitdir:')) {
+          const target = pointer.slice('gitdir:'.length).trim()
+          return target.startsWith('/') ? target : join(current, target)
+        }
+      }
+    } catch (error) {
+      if (error?.code === 'EISDIR') return candidate
+    }
+    const parent = dirname(current)
+    if (parent === current) return undefined
+    current = parent
+  }
+  return undefined
+}
+
+const deriveRepoKey = (cwd) => {
+  const override = process.env.PUSHARY_REPO_KEY
+  if (typeof override === 'string') {
+    const trimmed = override.trim()
+    if (trimmed.toLowerCase() === 'off') return undefined
+    if (trimmed) return trimmed.toLowerCase()
+  }
+  const dir = cwd || process.cwd()
+  try {
+    const gitDir = findGitDir(dir)
+    if (gitDir) {
+      // A worktree's config lives in the main git directory.
+      const wt = gitDir.replace(/\\/g, '/').indexOf('/worktrees/')
+      const configPath = wt === -1 ? join(gitDir, 'config') : join(gitDir.slice(0, wt), 'config')
+      if (existsSync(configPath)) {
+        let inOrigin = false
+        for (const rawLine of readFileSync(configPath, 'utf-8').split('\n')) {
+          const line = rawLine.trim()
+          if (line.startsWith('[')) { inOrigin = /^\[remote "origin"\]/.test(line); continue }
+          if (!inOrigin) continue
+          const url = /^url\s*=\s*(.+)$/.exec(line)
+          if (url) {
+            const normalized = normalizeRepoRemote(url[1].trim())
+            if (normalized) return normalized
+          }
+        }
+      }
+      const root = gitDir.endsWith('.git') ? dirname(gitDir) : dir
+      return `local/${basename(root).toLowerCase()}`.slice(0, REPO_KEY_MAX_LENGTH)
+    }
+    return `local/${basename(dir).toLowerCase()}`.slice(0, REPO_KEY_MAX_LENGTH)
+  } catch {
+    return undefined
   }
 }
 
@@ -324,13 +371,15 @@ export const extractCommand = (toolInput) => {
   return ''
 }
 
-// The single decision that keeps this hook cheap: does this tool call need the
-// network at all? Exported so the test suite can assert the fast path directly.
+// Every named tool reaches policy, as it does through the native bridge. A local
+// allowlist would silently bypass new tools and user-authored standing denials.
 export const shouldGate = (toolName, toolInput) => {
-  if (typeof toolName !== 'string' || !TERMINAL_TOOLS.has(normalizeToolName(toolName))) return null
-  const command = extractCommand(toolInput)
-  if (!command || !RISKY_COMMAND.test(command)) return null
-  return command
+  if (typeof toolName !== 'string' || !toolName.trim() || toolName.startsWith('mcp__pushary__') || toolName.startsWith('mcp_pushary_')) return null
+  if (TERMINAL_TOOLS.has(normalizeToolName(toolName))) {
+    const command = extractCommand(toolInput)
+    if (command) return command
+  }
+  return `${toolName}: ${JSON.stringify(toolInput ?? {})}`
 }
 
 // ── network diagnosis ────────────────────────────────────────────────────────
@@ -365,15 +414,16 @@ export const describeNetworkFailure = (error, env = process.env) => {
 // this field too, but a credential should never travel to be scrubbed on
 // arrival, and the notify body below was scrubbed nowhere at all.
 const askArgs = (command, project, ident) => ({
-  question: `Allow this command?\n\n${redactSecrets(command)}`,
+  question: `Allow this action?\n\n${redactSecrets(command)}`,
   type: 'confirm',
   context: `VS Code agent wants to run this in ${project}`,
   agentName: ident.agentName,
   sessionId: ident.sessionId,
   machineId: ident.machineId,
-  toolName: 'Bash',
+  toolName: ident.toolName ?? 'Bash',
   actionBody: deriveActionBody(command),
   wait: false,
+  waitEndsAt: new Date(Date.now() + MAX_BLOCK_MS).toISOString(),
 })
 
 const pollForAnswer = async (apiKey, correlationId, deadlineMs) => {
@@ -381,14 +431,12 @@ const pollForAnswer = async (apiKey, correlationId, deadlineMs) => {
     const remaining = clamp(deadlineMs - Date.now(), 1_000, WAIT_CHUNK_MS)
     try {
       const answer = await callTool(apiKey, 'wait_for_answer', { correlationId, timeoutMs: remaining })
-      if (answer?.answered) return answer
+      if (answer?.error) return STOPPED
+      if (answer?.answered || stopped(answer) || (answer?.status && answer.status !== 'pending')) return answer
     } catch {
-      if (Date.now() + POLL_GAP_MS >= deadlineMs) break
-      await sleep(POLL_GAP_MS)
-      continue
+      return { answered: false, handoffAction: 'stop' }
     }
-    if (Date.now() + POLL_GAP_MS >= deadlineMs) break
-    await sleep(POLL_GAP_MS)
+    await sleep(Math.min(POLL_GAP_MS, Math.max(0, deadlineMs - Date.now())))
   }
   return { answered: false }
 }
@@ -399,24 +447,28 @@ const fromTimeoutAction = (action, deniedReason) =>
 const DENIED = 'The user denied this command via a Pushary push approval. Do not run it. Propose an alternative or ask how to proceed.'
 
 const fromAnswer = (answer) => {
+  activeQuestion = undefined
   if (answer.value === 'defer') return ask()
   return answer.value === 'yes' ? ALLOW : deny(DENIED)
 }
 
+const stopped = (result) => result?.handoffAction === 'stop'
+  || ['cancelled', 'unavailable', 'stopped', 'missing'].includes(result?.status)
+const STOPPED = { answered: false, handoffAction: 'stop' }
+const STOP_REASON = 'This approval was cancelled or its state could not be verified. Do not run the action; wait for a new user instruction.'
+
 const withdrawQuestion = async (apiKey, correlationId) => {
-  const unanswered = { answered: false }
-  let cancelled
   try {
-    cancelled = await callTool(apiKey, 'cancel_question', { correlationId }, WITHDRAW_TIMEOUT_MS)
-  } catch {
-    return unanswered
-  }
-  if (cancelled?.cancelled !== false || cancelled?.status === 'unavailable') return unanswered
-  try {
+    const cancelled = await callTool(apiKey, 'cancel_question', { correlationId }, WITHDRAW_TIMEOUT_MS)
+    if (stopped(cancelled)) return STOPPED
+    if (cancelled?.cancelled === true) return { answered: false }
     const answer = await callTool(apiKey, 'wait_for_answer', { correlationId, timeoutMs: 1_000 }, WITHDRAW_TIMEOUT_MS)
-    return answer?.answered ? answer : unanswered
+    if (answer?.answered) return answer
+    return ['expired', 'missing'].includes(answer?.status) ? { answered: false } : STOPPED
   } catch {
-    return unanswered
+    return STOPPED
+  } finally {
+    activeQuestion = undefined
   }
 }
 
@@ -428,66 +480,90 @@ const handoffMessage = (asked) =>
 // push_only: wait up to the policy timeout, then apply the timeout action.
 const handlePushOnly = async (apiKey, command, project, ident, timeoutSeconds, timeoutAction) => {
   let asked
+  const args = { ...askArgs(command, project, ident), requestId: randomUUID() }
   try {
-    asked = await withRetry(() => callTool(apiKey, 'ask_user', askArgs(command, project, ident)), 3)
+    asked = await withRetry(() => callTool(apiKey, 'ask_user', args), 3)
   } catch {
-    return fromTimeoutAction(timeoutAction, 'Push notification failed; denied per your Pushary policy.')
+    return deny('Pushary could not create a verifiable approval. Retry the action.')
   }
-  if (!asked?.correlationId) return ask()
+  if (stopped(asked)) return deny(STOP_REASON)
+  if (asked?.answered) return fromAnswer(asked)
+  if (!asked?.correlationId) return deny('Pushary did not return a verifiable approval.')
+  activeQuestion = { apiKey, correlationId: asked.correlationId }
 
   // Keyboard bypass: the user is at the keyboard, so VS Code's own prompt is the
   // faster channel.
   if (handedOff(asked)) {
     const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (stopped(late)) return deny(STOP_REASON)
     if (late.answered) return fromAnswer(late)
     return ask(handoffMessage(asked))
   }
   if (asked.noDevices) {
     const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (stopped(late)) return deny(STOP_REASON)
     if (late.answered) return fromAnswer(late)
-    return fromTimeoutAction(timeoutAction, 'No device connected to approve on; denied per your Pushary policy.')
+    return ask('No device connected, approve here.')
   }
 
   const realMs = timeoutAction === 'wait' ? MAX_BLOCK_MS : Math.max(timeoutSeconds, 1) * 1000
   const cap = Math.min(realMs, MAX_BLOCK_MS)
-  const answer = await pollForAnswer(apiKey, asked.correlationId, Date.now() + cap)
+  const deadline = Date.now() + cap
+  const answer = await pollForAnswer(apiKey, asked.correlationId, deadline)
+  if (stopped(answer)) {
+    await withdrawQuestion(apiKey, asked.correlationId)
+    return deny(STOP_REASON)
+  }
   if (answer.answered) return fromAnswer(answer)
 
   const late = await withdrawQuestion(apiKey, asked.correlationId)
+  if (stopped(late)) return deny(STOP_REASON)
   if (late.answered) return fromAnswer(late)
 
   // If VS Code's hook limit cut us off before the configured timeout, hand off to
   // VS Code's own prompt rather than misapplying the policy's timeout action.
-  if (cap >= realMs) return fromTimeoutAction(timeoutAction, 'No response within the approval timeout; denied per your Pushary policy.')
+  if (cap >= realMs && Date.now() >= deadline) return fromTimeoutAction(timeoutAction, 'No response within the approval timeout; denied per your Pushary policy.')
   return ask()
 }
 
 // push_first: race the push for a short window, then fall back to VS Code's prompt.
 const handlePushFirst = async (apiKey, command, project, ident, pushFirstSeconds) => {
   let asked
+  const args = { ...askArgs(command, project, ident), requestId: randomUUID() }
   try {
-    asked = await withRetry(() => callTool(apiKey, 'ask_user', askArgs(command, project, ident)), 3)
+    asked = await withRetry(() => callTool(apiKey, 'ask_user', args), 3)
   } catch {
-    return ask()
+    return deny('Pushary could not create a verifiable approval. Retry the action.')
   }
-  if (!asked?.correlationId) return ask()
+  if (stopped(asked)) return deny(STOP_REASON)
+  if (asked?.answered) return fromAnswer(asked)
+  if (!asked?.correlationId) return deny('Pushary did not return a verifiable approval.')
+  activeQuestion = { apiKey, correlationId: asked.correlationId }
 
   if (handedOff(asked)) {
     const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (stopped(late)) return deny(STOP_REASON)
     if (late.answered) return fromAnswer(late)
     return ask(handoffMessage(asked))
   }
   if (asked.noDevices) {
     const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (stopped(late)) return deny(STOP_REASON)
     if (late.answered) return fromAnswer(late)
     return ask('No device connected, approve here.')
   }
 
   const cap = Math.min(Math.max(pushFirstSeconds, 1) * 1000, MAX_BLOCK_MS)
-  const answer = await pollForAnswer(apiKey, asked.correlationId, Date.now() + cap)
+  const deadline = Date.now() + cap
+  const answer = await pollForAnswer(apiKey, asked.correlationId, deadline)
+  if (stopped(answer)) {
+    await withdrawQuestion(apiKey, asked.correlationId)
+    return deny(STOP_REASON)
+  }
   if (answer.answered) return fromAnswer(answer)
 
   const late = await withdrawQuestion(apiKey, asked.correlationId)
+  if (stopped(late)) return deny(STOP_REASON)
   if (late.answered) return fromAnswer(late)
   return ask('No answer from your phone in time, so the request was withdrawn there. Approve here.')
 }
@@ -508,11 +584,38 @@ const handleNotifyOnly = async (apiKey, command, project, ident) => {
   return ask()
 }
 
+const TELEMETRY_EVENTS = ["PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "PreCompact", "SubagentStart", "SubagentStop"]
+
+const reportTelemetry = async (input, source) => {
+  const apiKey = resolveApiKey()
+  if (!apiKey) return
+  const sentAt = new Date().toISOString()
+  const payload = JSON.stringify(input, (_key, value) => typeof value === 'string' ? redactSecretsDeep(value) : value)
+  if (Buffer.byteLength(payload) > 262144) return
+  const hash = value => createHash('sha256').update(value).digest('hex')
+  const sessionId = input.session_id ?? input.sessionId ?? input.conversation_id ?? ''
+  const hookId = hash([source, sessionId, input.hook_event_name, sentAt, hash(payload)].join('|')).slice(0, 32)
+  try {
+    await fetch(`${BASE_URL}/api/agent/hook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ v: 1, machineId: getMachineId(), app: { platform: 'cli', version: 'editor-plugin' },
+        envelopes: [{ wire: 1, hookId, source, event: input.hook_event_name, sentAt,
+          cwd: input.cwd, repoKey: deriveRepoKey(input.cwd), payload }] }),
+      signal: AbortSignal.timeout(5000),
+    })
+  } catch { /* Telemetry never blocks an agent. */ }
+}
+
 const main = async () => {
   // Backstop: if anything hangs, return "ask" rather than letting the hook time
   // out and leave the agent with no decision at all. Scheduled here rather than
   // at module scope so importing this file for its helpers arms nothing.
-  setTimeout(() => respond(ask()), HARD_GUARD_MS).unref()
+  setTimeout(async () => {
+    if (!activeQuestion) return respond(deny('Pushary could not finish approval safely. Retry the action.'))
+    const late = await withdrawQuestion(activeQuestion.apiKey, activeQuestion.correlationId)
+    respond(late.answered ? fromAnswer(late) : deny('Pushary approval expired or could not be withdrawn safely. Retry the action.'))
+  }, HARD_GUARD_MS - 5_000).unref()
 
   let input
   try {
@@ -530,6 +633,12 @@ const main = async () => {
     return respond(PASS)
   }
 
+  input.hook_event_name ??= input.hookEventName
+  if (TELEMETRY_EVENTS.includes(input.hook_event_name)) {
+    await reportTelemetry(input, 'vscode')
+    return respond({})
+  }
+
   // Fast path. This runs before every tool the agent uses, so it must stay free
   // of disk and network work.
   const command = shouldGate(input.tool_name, input.tool_input)
@@ -544,11 +653,11 @@ const main = async () => {
   }
 
   const project = basename(input.cwd || process.cwd()) || 'workspace'
-  const sessionId = typeof input.session_id === 'string' ? input.session_id : undefined
-  const ident = { agentName: `VS Code - ${project}`, sessionId, machineId: getMachineId() }
+  const sessionId = typeof (input.session_id ?? input.sessionId) === 'string' ? (input.session_id ?? input.sessionId) : undefined
+  const ident = { agentName: `VS Code - ${project}`, sessionId, machineId: getMachineId(), toolName: input.tool_name, toolInputs: [input.tool_input ?? {}] }
 
   try {
-    const verdict = await decide(apiKey, command, input.cwd, sessionId)
+    const verdict = await decide(apiKey, command, input.cwd, sessionId, ident)
 
     // No verdict, or one that says nothing: VS Code's own prompt decides, exactly
     // as if this gate were not installed. Never a forced denial on an outage.
