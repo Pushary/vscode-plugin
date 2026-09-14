@@ -38,6 +38,16 @@ const TERMINAL_TOOLS = new Set([
 
 const normalizeToolName = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '')
 
+const READ_ONLY_TOOLS = new Set([
+  'readfile', 'viewimage', 'listdir', 'listdirectory', 'filesearch', 'findfiles', 'grepsearch', 'findtextinfiles',
+  'semanticsearch', 'searchcodebase', 'searchworkspacesymbols', 'geterrors', 'getchangedfiles', 'readprojectstructure',
+  'getnotebooksummary', 'readnotebookcelloutput', 'testsearch', 'findtestfiles', 'testfailure', 'getvscodeapi',
+  'getterminaloutput', 'gettaskoutput', 'terminalselection', 'terminallastcommand',
+])
+
+export const isReadOnlyTool = (toolName) =>
+  typeof toolName === 'string' && READ_ONLY_TOOLS.has(normalizeToolName(toolName.replace(/^copilot_/, '')))
+
 // ── VS Code decisions ─────────────────────────────────────────────────────────
 const PASS = { continue: true }
 const decision = (permissionDecision, permissionDecisionReason) => ({
@@ -50,6 +60,7 @@ const decision = (permissionDecision, permissionDecisionReason) => ({
 const ALLOW = decision('allow')
 const ask = (reason) => decision('ask', reason)
 const deny = (reason) => decision('deny', reason)
+const unresolved = (toolName, reason) => (isReadOnlyTool(toolName) ? PASS : ask(reason))
 
 let activeQuestion
 let done = false
@@ -648,7 +659,7 @@ const main = async () => {
   if (!apiKey) {
     diag('no API key found (PUSHARY_API_KEY, the plugin .mcp.json, or ~/.pushary/config.json). Run: npx @pushary/agent-hooks setup')
     return respond(
-      ask('Pushary is not configured: run `npx @pushary/agent-hooks setup` (get a key at https://pushary.com) to route this approval to your phone.')
+      unresolved(input.tool_name, 'Pushary is not configured: run `npx @pushary/agent-hooks setup` (get a key at https://pushary.com) to route this approval to your phone.')
     )
   }
 
@@ -661,7 +672,7 @@ const main = async () => {
 
     // No verdict, or one that says nothing: VS Code's own prompt decides, exactly
     // as if this gate were not installed. Never a forced denial on an outage.
-    if (!verdict || verdict.kind === 'no_opinion') return respond(ask())
+    if (!verdict || verdict.kind === 'no_opinion') return respond(unresolved(input.tool_name))
     if (verdict.kind === 'kill') return respond(deny(verdict.reason))
     if (verdict.kind === 'allow') return respond(ALLOW)
     if (verdict.kind === 'deny') return respond(deny(verdict.reason))
@@ -682,7 +693,7 @@ const main = async () => {
     }
   } catch (error) {
     diag(describeNetworkFailure(error))
-    return respond(ask())
+    return respond(unresolved(input.tool_name))
   }
 }
 

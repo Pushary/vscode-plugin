@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- Classify local reads, searches, diagnostics, and terminal/task output inspection as reads under the shared policy.
+- Let known read-only tools proceed when no verdict is available; keep the native prompt for other tools.
+
 ## 0.2.0
 
 The gate stopped carrying its own copy of the policy engine, and two defects went

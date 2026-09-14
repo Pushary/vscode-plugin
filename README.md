@@ -98,7 +98,7 @@ Lifecycle hooks report session starts, turn completion, tool results, compaction
 
 ## Failure behavior
 
-Every path returns a decision. Network errors, a missing API key, and unparseable input all fall back to `ask`, which hands the decision to VS Code's own approval prompt rather than allowing the command unapproved. A 55 second guard guarantees output before the hook's 60 second timeout.
+Known read-only tools proceed when a missing API key or unavailable verdict prevents policy evaluation. Other tools fall back to `ask`, which hands the decision to VS Code's own approval prompt. A 55 second guard guarantees output before the hook's 60 second timeout.
 
 ## Cross-tool compatibility
 
