@@ -5,7 +5,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir, hostname } from 'node:os'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const BASE_URL = process.env.PUSHARY_BASE_URL?.trim() || process.env.PUSHARY_API_URL?.trim() || 'https://pushary.com'
@@ -213,16 +213,8 @@ const GATE_TIMEOUT_MS = 5000
  * Null is not a denial and not an approval: every failure hands the call back to
  * VS Code's own prompt, exactly as if this gate were not installed.
  *
- * Sent as `cursor`, which is the wire's identity for an editor gate: a caller
- * with a hard block budget and no hook config of its own. The only consequence
- * is which policy profile answers, and a site without an explicit Cursor profile
- * falls back to the all-agents one, which is what this gate already received.
- *
- * No `repoKey` is sent, because deriving one means walking parent directories
- * for a `.git` and parsing its config, and a second implementation of that rule
- * is how the last drift started. Without one the server correctly declines to
- * apply repo-scoped rules, since an unknown repository is not evidence of a
- * match -- which is what this gate already got, by being filtered server-side.
+ * Uses the VS Code policy profile and the same repository identity carried
+ * by the later question. Tool aliases and targets are canonicalized server-side.
  */
 const decide = async (apiKey, command, cwd, sessionId, ident = {}) => {
   try {
@@ -424,6 +416,51 @@ export const describeNetworkFailure = (error, env = process.env) => {
 // Bearer ..."` left the machine and landed in the question. The server scrubs
 // this field too, but a credential should never travel to be scrubbed on
 // arrival, and the notify body below was scrubbed nowhere at all.
+// ask_user accepts a target of at most 80 characters (TOOL_TARGET_MAX_LENGTH in
+// @pushary/contracts). A longer one fails the whole ask.
+const TOOL_TARGET_MAX = 80
+
+// A file change is routed and matched by its path, so the ask carries the path the
+// gate judged, resolved against cwd the way the server resolves it. A path too long
+// for ask_user is left out and the server's own target is used instead.
+const filePathTarget = (path, cwd) => {
+  if (typeof path !== 'string' || !path) return undefined
+  const full = cwd && !isAbsolute(path) ? resolve(cwd, path) : path
+  return full.length <= TOOL_TARGET_MAX ? full : undefined
+}
+
+// ask_user takes toolPath as an absolute POSIX path of at most 4096 characters and
+// rejects the whole ask for anything else.
+const TOOL_PATH_MAX = 4096
+
+// The exact path, so routing and path rules still match a file whose path is too
+// long for toolTarget. Sent only when it is an absolute POSIX path: a relative path
+// with no absolute cwd, or a Windows path, is left out rather than failing the ask.
+const filePathForAsk = (path, cwd) => {
+  if (typeof path !== 'string' || !path) return undefined
+  if (/^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\')) return undefined
+  const full = path.startsWith('/') ? path
+    : typeof cwd === 'string' && cwd.startsWith('/') ? posix.resolve(cwd, path) : undefined
+  return full && full.length <= TOOL_PATH_MAX ? full : undefined
+}
+
+// The canonical tool and target from a gate verdict, taken by name. Anything else a
+// server adds to questionContext must never overwrite what this gate asks with.
+const canonicalQuestion = (context) => ({
+  toolName: typeof context?.toolName === 'string' && context.toolName ? context.toolName : undefined,
+  toolTarget: typeof context?.toolTarget === 'string' && context.toolTarget ? context.toolTarget : undefined,
+})
+
+// The tools the server targets by file (FILE_TARGET_TOOLS in @pushary/contracts).
+const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit'])
+
+// The same fields the server reads a VS Code file tool's path from.
+const extractFilePath = (toolInput) => {
+  if (!toolInput || typeof toolInput !== 'object') return undefined
+  const path = toolInput.file_path ?? toolInput.filePath ?? toolInput.path
+  return typeof path === 'string' && path ? path : undefined
+}
+
 const askArgs = (command, project, ident) => ({
   question: `Allow this action?\n\n${redactSecrets(command)}`,
   type: 'confirm',
@@ -431,7 +468,10 @@ const askArgs = (command, project, ident) => ({
   agentName: ident.agentName,
   sessionId: ident.sessionId,
   machineId: ident.machineId,
+  repoKey: ident.repoKey,
   toolName: ident.toolName ?? 'Bash',
+  toolTarget: ident.toolTarget,
+  ...(ident.toolPath ? { toolPath: ident.toolPath } : {}),
   actionBody: deriveActionBody(command),
   wait: false,
   waitEndsAt: new Date(Date.now() + MAX_BLOCK_MS).toISOString(),
@@ -483,10 +523,11 @@ const withdrawQuestion = async (apiKey, correlationId) => {
   }
 }
 
-const handedOff = (asked) => asked.suppressed || asked.status === 'terminal'
+const handedOff = (asked) => asked.suppressed || asked.status === 'terminal' || asked.status === 'notified'
+  || asked.handoffAction === 'cancel_then_ask_in_current_client'
 
 const handoffMessage = (asked) =>
-  asked.suppressed ? 'You are at the keyboard, approve here.' : 'Delivery mode is Terminal, approve here.'
+  asked.suppressed ? 'You are at the keyboard, continue with the agent’s permissions.' : 'Continue with the agent’s permissions.'
 
 // push_only: wait up to the policy timeout, then apply the timeout action.
 const handlePushOnly = async (apiKey, command, project, ident, timeoutSeconds, timeoutAction) => {
@@ -502,6 +543,14 @@ const handlePushOnly = async (apiKey, command, project, ident, timeoutSeconds, t
   if (!asked?.correlationId) return deny('Pushary did not return a verifiable approval.')
   activeQuestion = { apiKey, correlationId: asked.correlationId }
 
+  // No device first. The server checks for a channel before any quiet mode, and
+  // that reply carries the same handoffAction as a quiet handoff.
+  if (asked.noDevices) {
+    const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (stopped(late)) return deny(STOP_REASON)
+    if (late.answered) return fromAnswer(late)
+    return ask('No device connected, approve here.')
+  }
   // Keyboard bypass: the user is at the keyboard, so VS Code's own prompt is the
   // faster channel.
   if (handedOff(asked)) {
@@ -509,12 +558,6 @@ const handlePushOnly = async (apiKey, command, project, ident, timeoutSeconds, t
     if (stopped(late)) return deny(STOP_REASON)
     if (late.answered) return fromAnswer(late)
     return ask(handoffMessage(asked))
-  }
-  if (asked.noDevices) {
-    const late = await withdrawQuestion(apiKey, asked.correlationId)
-    if (stopped(late)) return deny(STOP_REASON)
-    if (late.answered) return fromAnswer(late)
-    return ask('No device connected, approve here.')
   }
 
   const realMs = timeoutAction === 'wait' ? MAX_BLOCK_MS : Math.max(timeoutSeconds, 1) * 1000
@@ -551,17 +594,17 @@ const handlePushFirst = async (apiKey, command, project, ident, pushFirstSeconds
   if (!asked?.correlationId) return deny('Pushary did not return a verifiable approval.')
   activeQuestion = { apiKey, correlationId: asked.correlationId }
 
-  if (handedOff(asked)) {
-    const late = await withdrawQuestion(apiKey, asked.correlationId)
-    if (stopped(late)) return deny(STOP_REASON)
-    if (late.answered) return fromAnswer(late)
-    return ask(handoffMessage(asked))
-  }
   if (asked.noDevices) {
     const late = await withdrawQuestion(apiKey, asked.correlationId)
     if (stopped(late)) return deny(STOP_REASON)
     if (late.answered) return fromAnswer(late)
     return ask('No device connected, approve here.')
+  }
+  if (handedOff(asked)) {
+    const late = await withdrawQuestion(apiKey, asked.correlationId)
+    if (stopped(late)) return deny(STOP_REASON)
+    if (late.answered) return fromAnswer(late)
+    return ask(handoffMessage(asked))
   }
 
   const cap = Math.min(Math.max(pushFirstSeconds, 1) * 1000, MAX_BLOCK_MS)
@@ -665,7 +708,7 @@ const main = async () => {
 
   const project = basename(input.cwd || process.cwd()) || 'workspace'
   const sessionId = typeof (input.session_id ?? input.sessionId) === 'string' ? (input.session_id ?? input.sessionId) : undefined
-  const ident = { agentName: `VS Code - ${project}`, sessionId, machineId: getMachineId(), toolName: input.tool_name, toolInputs: [input.tool_input ?? {}] }
+  const ident = { agentName: `VS Code - ${project}`, sessionId, machineId: getMachineId(), toolName: input.tool_name, toolInputs: [input.tool_input ?? {}], repoKey: deriveRepoKey(input.cwd) }
 
   try {
     const verdict = await decide(apiKey, command, input.cwd, sessionId, ident)
@@ -678,6 +721,15 @@ const main = async () => {
     if (verdict.kind === 'deny') return respond(deny(verdict.reason))
     if (verdict.kind !== 'ask') return respond(ask())
 
+    // Reuse the server's canonical tool and target so asking resolves the same rules
+    // as the gate, taken by name so nothing else in questionContext can overwrite this
+    // gate's identity. A file change keeps its own path: the server's target for a
+    // file is only its extension, which loses what routing and path rules match on.
+    const canonical = canonicalQuestion(verdict.questionContext)
+    if (canonical.toolName) ident.toolName = canonical.toolName
+    const ownFile = FILE_TOOLS.has(ident.toolName) ? extractFilePath(input.tool_input) : undefined
+    ident.toolTarget = filePathTarget(ownFile, input.cwd) ?? canonical.toolTarget
+    ident.toolPath = filePathForAsk(ownFile, input.cwd)
     const tool = verdict.policy
 
     switch (tool.mode) {

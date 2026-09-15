@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+
+- Updates hands an approval back to VS Code promptly. The gate no longer waits for a phone answer that Updates never asks for, and it withdraws the phone question before VS Code asks. An answer that arrives in that moment still counts.
+- With no phone or other notification channel connected, VS Code's prompt says "No device connected, approve here." instead of naming a delivery mode.
+- Approval questions carry the repository and the tool name the gate judged, so routing and repository rules apply to the question as they did to the gate. A file edit is asked about with its full path, so path rules and routing match it. A path longer than 80 characters falls back to the file type instead of making the question fail.
+
 ## 0.2.2
 
 - Classify local reads, searches, diagnostics, and terminal/task output inspection as reads under the shared policy.
