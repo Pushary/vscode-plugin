@@ -441,7 +441,7 @@ Propose the boundary of this run and block until the user agrees to it. Call it 
 
 The user sees three things: the paths you will change, the paths you promise to leave alone, and your definition of done. The user agrees to all three in one tap.
 
-**Before you call this, look at your own tool list.** If you hold no `Edit`, `Write` or `MultiEdit`, this run changes no files, and a path contract here enforces nothing. Use shape 3 below. This one check decides everything else in this section, and it costs no tool calls.
+**Before you call this, identify the file-editing capabilities you will use.** Native names differ: Codex uses `apply_patch`, VS Code also uses patch and replacement tools, and other agents expose `Edit`, `Write` or `MultiEdit`. These can carry enforceable paths. Use shape 3 only when this run has no file boundary to enforce. Read the returned `enforces` and `hookSeen` fields to confirm what is actually checked; tool names alone do not prove enforcement.
 
 **A boundary makes a question. It never makes an approval.** After the user agrees, a rule that already asked still asks. A scope can only turn an automatic approval into a question.
 
@@ -449,7 +449,7 @@ The user sees three things: the paths you will change, the paths you promise to 
 
 The gate reads one thing from the contract: the path of a file you are about to change. It compares that path with `allowedPaths` and `offLimitsPaths`.
 
-- **Enforced.** `Edit`, `Write` and `MultiEdit`, and the same calls under other agent names. A file outside the agreed paths stops being auto-approvable and becomes a new question. Approving it widens the scope by that exact path.
+- **Enforced.** `Edit`, `Write`, `MultiEdit` and supported aliases, including Codex `apply_patch` and VS Code patch/replacement tools. A file outside the agreed paths stops being auto-approvable and becomes a new question. Approving it widens the scope by that exact path.
 - **Not enforced.** Shell commands. `Read`. Web requests. Every MCP tool. These carry no file path, so the gate has no path to judge and reads them as inside the scope. The permission policy still governs them.
 - **`doneWhen` and `promises` are not enforced.** The user reads them. No code checks them.
 
