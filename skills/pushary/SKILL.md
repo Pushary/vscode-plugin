@@ -118,7 +118,7 @@ For example, in a repository with two apps and no test runner in the package:
 - **Ask at the boundary, not once for each item.** Ask about deleting files. Do not ask about each file.
 - **The limit of three notifications counts pushes.** Questions you ask in the terminal are free and do not count.
 
-`propose_scope` records the boundary this work produces. Read its section below first. What it can enforce depends on whether this run changes files.
+`propose_scope` records the boundary this work produces. It is a separate decision from notifying: see "When to Propose a Scope" below. What it can enforce depends on whether this run changes files.
 
 ## When to Use
 
@@ -140,16 +140,28 @@ For example, in a repository with two apps and no test runner in the package:
 - You need a name, path, value, or free-text decision
 - The options cannot be enumerated in advance
 
-**Propose a scope when:**
-- This run changes files with `Edit`, `Write` or `MultiEdit`, and the file boundary is not yet agreed
-- Call `propose_scope` once, before the work, not after
-- Skip it for a single quick edit; a scope prompt for one file is just noise
-- Put a boundary that is not a file path in `promises`, never in `allowedPaths`. Read the `enforces` field that comes back, and tell the user what it says
-
 **Do NOT notify when:**
 - The task is trivial or single-step
 - The question can be answered from context without user input
 - You already sent 3 notifications for the current task (unless the user explicitly asked for more)
+
+## When to Propose a Scope
+
+This is a separate decision from notifying. The rules above do not apply to it. A scope is not a notification, and the limit of three does not count it.
+
+**Propose a scope when:**
+- This run changes files with `Edit`, `Write` or `MultiEdit`, and the file boundary is not yet agreed
+- The run touches more than one file, or you cannot name every file before you start
+- Call `propose_scope` once, before the first edit, not after
+
+**Do not propose a scope when:**
+- The run changes one file and you already know which one
+- The user named the exact files in this turn, so the boundary is already agreed
+- The run changes no files and records no promise worth keeping
+
+"Trivial" here means one file. It does not mean one task. A refactor across modules, a rename through several files, a migration, or wiring one option through the code all need a scope. Each edit can be small and the run still needs a boundary.
+
+Put a boundary that is not a file path in `promises`, never in `allowedPaths`. Read the `enforces` field that comes back. Tell the user what it says.
 
 ## Setup
 
