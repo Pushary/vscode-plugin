@@ -451,6 +451,23 @@ const canonicalQuestion = (context) => ({
   toolTarget: typeof context?.toolTarget === 'string' && context.toolTarget ? context.toolTarget : undefined,
 })
 
+// ask_user caps scopePath at SCOPE_PATH_MAX_LENGTH and blocker at
+// DECISION_LINE_MAX. The server derives a cwd-relative scope path that can be
+// longer than 200, so an over-length value must be DROPPED rather than sent:
+// ask_user rejects the whole call, this gate cannot parse the error, and the
+// action fails closed. Dropping costs only the widening on approval.
+const SCOPE_PATH_MAX = 200
+const BLOCKER_MAX = 500
+
+const withinCap = (value, cap) =>
+  typeof value === 'string' && value && value.length <= cap ? value : undefined
+
+/** The scope breach behind an ask, when the verdict says the ask exists for one. */
+const scopeFromVerdict = (verdict) => ({
+  scopePath: withinCap(verdict?.scopePath, SCOPE_PATH_MAX),
+  scopeReason: withinCap(verdict?.scopeReason, BLOCKER_MAX),
+})
+
 // The tools the server targets by file (FILE_TARGET_TOOLS in @pushary/contracts).
 const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit'])
 
@@ -472,6 +489,12 @@ const askArgs = (command, project, ident) => ({
   toolName: ident.toolName ?? 'Bash',
   toolTarget: ident.toolTarget,
   ...(ident.toolPath ? { toolPath: ident.toolPath } : {}),
+  // Carried from the verdict. Without scopePath the server cannot widen the
+  // ratified contract when the user approves, so every further file in the same
+  // area asks again; without the blocker the card never says that a boundary the
+  // user personally agreed to is the reason for asking.
+  ...(ident.scopePath ? { scopePath: ident.scopePath } : {}),
+  ...(ident.scopeReason ? { blocker: ident.scopeReason } : {}),
   actionBody: deriveActionBody(command),
   wait: false,
   waitEndsAt: new Date(Date.now() + MAX_BLOCK_MS).toISOString(),
@@ -730,6 +753,7 @@ const main = async () => {
     const ownFile = FILE_TOOLS.has(ident.toolName) ? extractFilePath(input.tool_input) : undefined
     ident.toolTarget = filePathTarget(ownFile, input.cwd) ?? canonical.toolTarget
     ident.toolPath = filePathForAsk(ownFile, input.cwd)
+    Object.assign(ident, scopeFromVerdict(verdict))
     const tool = verdict.policy
 
     switch (tool.mode) {
