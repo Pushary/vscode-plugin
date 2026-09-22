@@ -106,7 +106,7 @@ This repository uses the `.claude-plugin/plugin.json` layout, which VS Code, Git
 
 The layout is portable; this plugin is not meant to be. `hooks/hooks.json` uses VS Code's flat hook form, and the gate speaks VS Code's tool names, so treat this as a VS Code plugin that happens to sit in a portable folder shape.
 
-Claude Code users are served by `npx @pushary/agent-hooks setup --agents claude_code`, which installs a hook built for Claude Code's own tool names and matcher format. Do not install this directory as a Claude Code plugin as well: at best it duplicates the MCP server, and the two installs would fight over the same approvals.
+Claude Code users are served by `npx @pushary/agent-hooks@latest setup --agents claude_code`, which installs a hook built for Claude Code's own tool names and matcher format. Do not install this directory as a Claude Code plugin as well: at best it duplicates the MCP server, and the two installs would fight over the same approvals.
 
 ## Development
 
