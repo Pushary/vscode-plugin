@@ -2,6 +2,7 @@
 // Pushary VS Code hooks: server policy, fenced phone approvals, and lifecycle telemetry.
 // Dependency-free for marketplace installs. Regenerate agent-hooks/data after edits.
 
+import { redactSecrets, redactSecretsDeep } from './redaction.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir, hostname } from 'node:os'
 import { existsSync, readFileSync } from 'node:fs'
@@ -337,27 +338,6 @@ const ACTION_BODY_TRUNCATION_MARKER = '\n… [truncated]'
 // One combined list used to serve both, which meant the only text this gate
 // scrubbed was the action body. The question and the notification body carried
 // the raw command.
-const REDACTION_RULES = [
-  [/-----BEGIN[A-Z0-9 ]*PRIVATE KEY-----(?:\r?\n|(?:\\r)?\\n)?(?:(?:Proc-Type|DEK-Info): [A-Za-z0-9,-]+(?:\r?\n|(?:\\r)?\\n))*(?:[A-Za-z0-9+/=\r\n]|\\[rn])*?-----END[A-Z0-9 ]*PRIVATE KEY-----/g, '[redacted key]'],
-  [/\bsk-[A-Za-z0-9_-]{16,}\b/g, '[redacted]'],
-  [/\b[spr]k_(?:live|test)_[A-Za-z0-9]{8,}\b/g, '[redacted]'],
-  [/\bwhsec_[A-Za-z0-9]{16,}\b/g, '[redacted]'],
-  [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b/g, '[redacted]'],
-  [/\bgithub_pat_[A-Za-z0-9_]{22,}\b/g, '[redacted]'],
-  [/\bglpat-[A-Za-z0-9_-]{20,}\b/g, '[redacted]'],
-  [/\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, '[redacted]'],
-  [/\bAIza[A-Za-z0-9_-]{35}\b/g, '[redacted]'],
-  [/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]'],
-  [/\bnpm_[A-Za-z0-9]{36}\b/g, '[redacted]'],
-  [/\bxai-[A-Za-z0-9]{16,}\b/g, '[redacted]'],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[redacted]'],
-  [/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'bearer [redacted]'],
-  [/\bauthorization:\s*(?:[A-Za-z0-9_\-./+=:@%^!#]|\\[^\s'"])+/gi, 'authorization: [redacted]'],
-  [/((?:secret|token|password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret|private[_-]?key)["']?(?:[ \t]*:[ \t]*|[ \t]+=[ \t]*|=))(?:(")(?:[A-Za-z0-9_\-./+=:@%^!#]|\\[^\s'"])*"|(')[A-Za-z0-9_\-./+=:@%^!#\\]*'|(["']?)(?:[A-Za-z0-9_\-./+=:@%^!#]|\\[^\s'"])+)/gi, '$1$2$3$4[redacted]$2$3'],
-]
-const HIGH_ENTROPY_RULE = [/[A-Za-z0-9+/]{40,}={0,2}/g, '[redacted]']
-const redactSecrets = (text) => REDACTION_RULES.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text)
-const redactSecretsDeep = (text) => redactSecrets(text).replace(HIGH_ENTROPY_RULE[0], HIGH_ENTROPY_RULE[1])
 const capActionBody = (text) =>
   text.length <= ACTION_BODY_MAX ? text : `${text.slice(0, ACTION_BODY_MAX - ACTION_BODY_TRUNCATION_MARKER.length)}${ACTION_BODY_TRUNCATION_MARKER}`
 const deriveActionBody = (command) => capActionBody(redactSecretsDeep(command))
