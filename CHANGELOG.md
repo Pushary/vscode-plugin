@@ -2,6 +2,7 @@
 
 ## 0.2.3
 
+- Approval text never hides part of a command. The value after a credential name is hidden only up to the first space, quote or piece of shell syntax, so `echo "password=" && rm -rf ~` and `eval TOKEN="x; rm -rf ~"` both show the `rm`. A private key block is hidden only when it holds nothing but the key.
 - Updates hands an approval back to VS Code promptly. The gate no longer waits for a phone answer that Updates never asks for, and it withdraws the phone question before VS Code asks. An answer that arrives in that moment still counts.
 - With no phone or other notification channel connected, VS Code's prompt says "No device connected, approve here." instead of naming a delivery mode.
 - Approval questions carry the repository and the tool name the gate judged, so routing and repository rules apply to the question as they did to the gate. A file edit is asked about with its full path, so path rules and routing match it. A path longer than 80 characters falls back to the file type instead of making the question fail.

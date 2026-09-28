@@ -338,7 +338,7 @@ const ACTION_BODY_TRUNCATION_MARKER = '\n… [truncated]'
 // scrubbed was the action body. The question and the notification body carried
 // the raw command.
 const REDACTION_RULES = [
-  [/-----BEGIN[A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z0-9 ]*PRIVATE KEY-----/g, '[redacted key]'],
+  [/-----BEGIN[A-Z0-9 ]*PRIVATE KEY-----(?:\r?\n|(?:\\r)?\\n)?(?:(?:Proc-Type|DEK-Info): [A-Za-z0-9,-]+(?:\r?\n|(?:\\r)?\\n))*(?:[A-Za-z0-9+/=\r\n]|\\[rn])*?-----END[A-Z0-9 ]*PRIVATE KEY-----/g, '[redacted key]'],
   [/\bsk-[A-Za-z0-9_-]{16,}\b/g, '[redacted]'],
   [/\b[spr]k_(?:live|test)_[A-Za-z0-9]{8,}\b/g, '[redacted]'],
   [/\bwhsec_[A-Za-z0-9]{16,}\b/g, '[redacted]'],
@@ -352,8 +352,8 @@ const REDACTION_RULES = [
   [/\bxai-[A-Za-z0-9]{16,}\b/g, '[redacted]'],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[redacted]'],
   [/\bbearer\s+[A-Za-z0-9._~+/=-]+/gi, 'bearer [redacted]'],
-  [/\bauthorization:\s*\S+/gi, 'authorization: [redacted]'],
-  [/((?:secret|token|password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret|private[_-]?key)\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi, '$1[redacted]'],
+  [/\bauthorization:\s*(?:[A-Za-z0-9_\-./+=:@%^!#]|\\[^\s'"])+/gi, 'authorization: [redacted]'],
+  [/((?:secret|token|password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret|private[_-]?key)["']?(?:[ \t]*:[ \t]*|[ \t]+=[ \t]*|=))(?:(")(?:[A-Za-z0-9_\-./+=:@%^!#]|\\[^\s'"])*"|(')[A-Za-z0-9_\-./+=:@%^!#\\]*'|(["']?)(?:[A-Za-z0-9_\-./+=:@%^!#]|\\[^\s'"])+)/gi, '$1$2$3$4[redacted]$2$3'],
 ]
 const HIGH_ENTROPY_RULE = [/[A-Za-z0-9+/]{40,}={0,2}/g, '[redacted]']
 const redactSecrets = (text) => REDACTION_RULES.reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text)
