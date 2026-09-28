@@ -35,13 +35,13 @@ There are three things.
 This installs the plugin, registers it with VS Code, and links your API key. It also sets up Claude Code, Codex, Cursor, and Hermes if you use them.
 
 ```bash
-npx @pushary/agent-hooks@latest setup
+npx pushary@latest setup
 ```
 
 To configure only VS Code:
 
 ```bash
-npx @pushary/agent-hooks@latest setup --agents vscode
+npx pushary@latest setup --agents vscode
 ```
 
 ### Option 2: Install from source
@@ -106,11 +106,11 @@ This repository uses the `.claude-plugin/plugin.json` layout, which VS Code, Git
 
 The layout is portable; this plugin is not meant to be. `hooks/hooks.json` uses VS Code's flat hook form, and the gate speaks VS Code's tool names, so treat this as a VS Code plugin that happens to sit in a portable folder shape.
 
-Claude Code users are served by `npx @pushary/agent-hooks@latest setup --agents claude_code`, which installs a hook built for Claude Code's own tool names and matcher format. Do not install this directory as a Claude Code plugin as well: at best it duplicates the MCP server, and the two installs would fight over the same approvals.
+Claude Code users are served by `npx pushary@latest setup --agents claude_code`, which installs a hook built for Claude Code's own tool names and matcher format. Do not install this directory as a Claude Code plugin as well: at best it duplicates the MCP server, and the two installs would fight over the same approvals.
 
 ## Development
 
-`skills/pushary/SKILL.md` mirrors the Pushary skill that ships with `@pushary/agent-hooks`. Keep the two the same.
+`skills/pushary/SKILL.md` mirrors the Pushary skill that ships with the Pushary CLI (`pushary` on npm). Keep the two the same.
 
 Test the gate without VS Code:
 

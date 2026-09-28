@@ -703,9 +703,9 @@ const main = async () => {
 
   const apiKey = resolveApiKey()
   if (!apiKey) {
-    diag('no API key found (PUSHARY_API_KEY, the plugin .mcp.json, or ~/.pushary/config.json). Run: npx @pushary/agent-hooks@latest setup')
+    diag('no API key found (PUSHARY_API_KEY, the plugin .mcp.json, or ~/.pushary/config.json). Run: npx pushary@latest setup')
     return respond(
-      unresolved(input.tool_name, 'Pushary is not configured: run `npx @pushary/agent-hooks@latest setup` (get a key at https://pushary.com) to route this approval to your phone.')
+      unresolved(input.tool_name, 'Pushary is not configured: run `npx pushary@latest setup` (get a key at https://pushary.com) to route this approval to your phone.')
     )
   }
 
