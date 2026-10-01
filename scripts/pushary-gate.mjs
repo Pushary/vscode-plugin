@@ -518,7 +518,7 @@ const withdrawQuestion = async (apiKey, correlationId) => {
     if (cancelled?.cancelled === true) return { answered: false }
     const answer = await callTool(apiKey, 'wait_for_answer', { correlationId, timeoutMs: 1_000 }, WITHDRAW_TIMEOUT_MS)
     if (answer?.answered) return answer
-    return ['expired', 'missing'].includes(answer?.status) ? { answered: false } : STOPPED
+    return answer?.status === 'expired' ? { answered: false } : STOPPED
   } catch {
     return STOPPED
   } finally {

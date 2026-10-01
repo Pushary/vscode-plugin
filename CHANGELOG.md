@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+- Stop the gated action when a question is missing after withdrawal, instead of treating it as a timeout that can approve the action.
+
 ## 0.2.3
 
 - Approval text never hides part of a command. The value after a credential name is hidden only up to the first space, quote or piece of shell syntax, so `echo "password=" && rm -rf ~` and `eval TOKEN="x; rm -rf ~"` both show the `rm`. A private key block is hidden only when it holds nothing but the key.
