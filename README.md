@@ -121,7 +121,7 @@ echo '{"hook_event_name":"PreToolUse","tool_name":"runTerminalCommand","tool_inp
 
 ## Security
 
-This repository has no secrets. Your key is read at runtime from `PUSHARY_API_KEY`, the plugin `.mcp.json`, or `~/.pushary/config.json`. The gate script has no dependencies and only talks to pushary.com. Command text is redacted for common secret shapes before it is sent. Read `scripts/pushary-gate.mjs` to see exactly what it sends. See `SECURITY.md` for details.
+Your key is read at runtime from `PUSHARY_API_KEY`, the plugin `.mcp.json`, or `~/.pushary/config.json`. The gate script has no dependencies. It sends approval and activity data to pushary.com by default; `PUSHARY_BASE_URL` and `PUSHARY_API_URL` can change its API endpoints. Command text is redacted for common secret shapes before it is sent. Read `scripts/pushary-gate.mjs` to see exactly what it sends. See `SECURITY.md` for details.
 
 ## License
 
