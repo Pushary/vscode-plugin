@@ -73,7 +73,7 @@ The source plugin and CLI installer use the same decision service. The Mac app c
 The plugin reads your key from the `PUSHARY_API_KEY` environment variable, falling back to the key `pushary setup` writes to `~/.pushary/config.json`.
 
 ```bash
-echo 'export PUSHARY_API_KEY="pk_xxx.sk_xxx"' >> ~/.zshrc
+echo 'export PUSHARY_API_KEY="pk_xxx.xxx"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
