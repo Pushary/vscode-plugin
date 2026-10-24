@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5
+
+- Carries the skill changes since 0.2.4: personal reminders with `schedule_reminder`, questions that stay open until answered, and the current setup and pairing steps.
+- The bundled Pushary skill asks each question once, on one channel: in the chat when you are there, through `ask_user` when you are away. It no longer sends a question inside a notification.
+- A reversible choice the agent would make anyway, inside the task, is made and listed in its final message instead of asked. An irreversible step, spending money or a decision outside its authority still gets a question.
+- A question that closes unanswered is never approval: the agent does not take the step and asks you in the chat instead.
+- Notification bodies are kept under 180 characters, where the phone cuts them.
+
 ## 0.2.4
 
 - Stop the gated action when a question is missing after withdrawal, instead of treating it as a timeout that can approve the action.
