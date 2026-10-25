@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6
+
+- The bundled Pushary skill is 0.13.1. It gives the next step for each `status --json` exit code, lists every agent id setup accepts, and keeps the Mac app in charge of the agents it connected.
+- An approval the run cannot continue without is still asked after three pushes, wherever you are, instead of waiting in a chat nobody reads.
+- Reminders: a body over 180 characters fails the call, and a reminder reaches you on your phone, or only in the Mac app when no phone is connected.
+- The skill tells the agent not to say it notified you when nothing was pushed.
+- A Partner customer can answer on a Mac they connected from their phone. The skill used to say they could not.
+
 ## 0.2.5
 
 - Carries the skill changes since 0.2.4: personal reminders with `schedule_reminder`, questions that stay open until answered, and the current setup and pairing steps.
