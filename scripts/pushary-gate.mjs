@@ -227,7 +227,7 @@ const decide = async (apiKey, command, cwd, sessionId, ident = {}) => {
         source: 'vscode',
         toolName: ident.toolName ?? 'Bash',
         toolInputs: ident.toolInputs ?? [{ command }],
-        repoKey: deriveRepoKey(cwd),
+        ...repositoryScopeFor(cwd),
         cwd,
         sessionId,
       }),
@@ -267,7 +267,7 @@ const normalizeRepoRemote = (remoteUrl) => {
   return `${host}/${path}`.replace(/\.git$/i, '').toLowerCase().slice(0, REPO_KEY_MAX_LENGTH)
 }
 
-const findGitDir = (startDir) => {
+const findGitDir = (startDir, legacy = false) => {
   let current = startDir
   for (let depth = 0; depth < MAX_PARENT_WALK; depth += 1) {
     const candidate = join(current, '.git')
@@ -277,7 +277,7 @@ const findGitDir = (startDir) => {
         // A directory read throws EISDIR, which is the ordinary-clone case.
         if (pointer.startsWith('gitdir:')) {
           const target = pointer.slice('gitdir:'.length).trim()
-          return target.startsWith('/') ? target : join(current, target)
+          return (legacy ? target.startsWith('/') : isAbsolute(target)) ? target : join(current, target)
         }
       }
     } catch (error) {
@@ -290,7 +290,23 @@ const findGitDir = (startDir) => {
   return undefined
 }
 
-const deriveRepoKey = (cwd) => {
+const mainGitDirOf = (gitDir) => {
+  try {
+    const pointer = readFileSync(join(gitDir, 'commondir'), 'utf-8').trim()
+    if (!pointer) return gitDir
+    return isAbsolute(pointer) ? pointer : resolve(gitDir, pointer)
+  } catch {
+    return gitDir
+  }
+}
+
+const projectRootOf = (gitDir, cwd) => {
+  const mainGitDir = mainGitDirOf(gitDir)
+  if (basename(mainGitDir) === '.git') return dirname(mainGitDir)
+  return gitDir.endsWith('.git') ? dirname(gitDir) : cwd
+}
+
+const deriveRepoKey = (cwd, legacy = false) => {
   const override = process.env.PUSHARY_REPO_KEY
   if (typeof override === 'string') {
     const trimmed = override.trim()
@@ -299,11 +315,13 @@ const deriveRepoKey = (cwd) => {
   }
   const dir = cwd || process.cwd()
   try {
-    const gitDir = findGitDir(dir)
+    const gitDir = findGitDir(dir, legacy)
     if (gitDir) {
       // A worktree's config lives in the main git directory.
-      const wt = gitDir.replace(/\\/g, '/').indexOf('/worktrees/')
-      const configPath = wt === -1 ? join(gitDir, 'config') : join(gitDir.slice(0, wt), 'config')
+      const oldIndex = gitDir.replace(/\\/g, '/').indexOf('/worktrees/')
+      const configPath = legacy
+        ? join(oldIndex === -1 ? gitDir : gitDir.slice(0, oldIndex), 'config')
+        : join(mainGitDirOf(gitDir), 'config')
       if (existsSync(configPath)) {
         let inOrigin = false
         for (const rawLine of readFileSync(configPath, 'utf-8').split('\n')) {
@@ -317,7 +335,7 @@ const deriveRepoKey = (cwd) => {
           }
         }
       }
-      const root = gitDir.endsWith('.git') ? dirname(gitDir) : dir
+      const root = legacy ? (gitDir.endsWith('.git') ? dirname(gitDir) : dir) : projectRootOf(gitDir, dir)
       return `local/${basename(root).toLowerCase()}`.slice(0, REPO_KEY_MAX_LENGTH)
     }
     return `local/${basename(dir).toLowerCase()}`.slice(0, REPO_KEY_MAX_LENGTH)
@@ -325,6 +343,13 @@ const deriveRepoKey = (cwd) => {
     return undefined
   }
 }
+
+const repositoryScopeFor = (cwd) => {
+  const repoKey = deriveRepoKey(cwd, true)
+  const sharedRepoKey = deriveRepoKey(cwd)
+  return { repoKey, ...(sharedRepoKey && sharedRepoKey !== repoKey ? { sharedRepoKey } : {}) }
+}
+
 
 // ── action body capture + redaction (inlined mirror of describe.ts, since this
 // dependency-free hook cannot import the workspace) ───────────────────────────
@@ -625,7 +650,7 @@ const handlePushFirst = async (apiKey, command, project, ident, pushFirstSeconds
   return ask('No answer from your phone in time, so the request was withdrawn there. Approve here.')
 }
 
-export { handlePushOnly, handlePushFirst, withdrawQuestion }
+export { handlePushOnly, handlePushFirst, withdrawQuestion, deriveRepoKey, repositoryScopeFor }
 
 // notify_only: fire an awareness notification, let VS Code's prompt decide.
 const handleNotifyOnly = async (apiKey, command, project, ident) => {
