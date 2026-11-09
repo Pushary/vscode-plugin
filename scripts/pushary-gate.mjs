@@ -114,7 +114,18 @@ const readStdin = async () => {
   }
 }
 
-const getMachineId = () => createHash('sha256').update(hostname()).digest('hex').slice(0, 8)
+const MACHINE_ID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const readSharedMachineId = () => {
+  try {
+    const value = readFileSync(join(homedir(), '.pushary', 'machine-id'), 'utf-8').trim()
+    return MACHINE_ID_UUID.test(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+export const getMachineId = () => readSharedMachineId() ?? createHash('sha256').update(hostname()).digest('hex').slice(0, 8)
 
 // Env first. VS Code launched from Finder/Dock does not inherit a shell profile,
 // so PUSHARY_API_KEY is frequently absent even when the user set it correctly.
