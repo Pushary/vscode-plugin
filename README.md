@@ -102,6 +102,8 @@ Known read-only tools proceed when a missing API key or unavailable verdict prev
 
 ## Cross-tool compatibility
 
+For a team using several coding agents, see the [Pushary for Teams setup](https://pushary.com/teams?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme-teams) for shared approval rules and a record of who answered.
+
 This repository uses the `.claude-plugin/plugin.json` layout, which VS Code, GitHub Copilot CLI, and Claude Code all detect. That is also what makes `${CLAUDE_PLUGIN_ROOT}` available in `hooks/hooks.json`, which the Copilot-format layout does not define.
 
 The layout is portable; this plugin is not meant to be. `hooks/hooks.json` uses VS Code's flat hook form, and the gate speaks VS Code's tool names, so treat this as a VS Code plugin that happens to sit in a portable folder shape.
