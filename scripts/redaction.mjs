@@ -5,6 +5,7 @@ const DISPLAYED_CREDENTIAL_KEY = String.raw `${CREDENTIAL_NAME}(?:[ \t]*:[ \t]*|
 const SHELL_INERT_UNIT = String.raw `(?:[A-Za-z0-9_\-./+=:@%^!#]|\\[^\s'"])`;
 const SHELL_INERT_SINGLE_QUOTED_UNIT = String.raw `[A-Za-z0-9_\-./+=:@%^!#\\]`;
 const SHELL_INERT_URL_PASSWORD_UNIT = String.raw `(?:[A-Za-z0-9_\-.+=:%^!#]|\\[^\s'"@/])`;
+const AUTHORIZATION_SCHEME = String.raw `(?:basic|digest|token|negotiate|ntlm)`;
 const PEM_LINE_BREAK = String.raw `(?:\r?\n|(?:\\r)?\\n)`;
 const credentialAssignmentRule = (key, doubleQuoted, singleQuoted, bare) => ({
     pattern: new RegExp(String.raw `(${key})(?:(")${doubleQuoted}|(')${singleQuoted}|(["']?)${bare})`, 'gi'),
@@ -41,7 +42,7 @@ const secretRedactionRules = (shapes) => [
     { pattern: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, replacement: '[redacted]' },
     { pattern: new RegExp(String.raw `\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)${shapes.urlPassword}@`, 'gi'), replacement: '$1[redacted]@' },
     { pattern: new RegExp(String.raw `\bbearer${shapes.separator}+[A-Za-z0-9._~+/=-]+`, 'gi'), replacement: 'bearer [redacted]' },
-    { pattern: new RegExp(String.raw `\bauthorization:${shapes.separator}*${shapes.authorizationValue}`, 'gi'), replacement: 'authorization: [redacted]' },
+    { pattern: new RegExp(String.raw `\bauthorization:${shapes.separator}*(?:${AUTHORIZATION_SCHEME}${shapes.separator}+)?${shapes.authorizationValue}`, 'gi'), replacement: 'authorization: [redacted]' },
     shapes.credentialAssignment,
 ];
 export const SECRET_REDACTION_RULES = secretRedactionRules(DISPLAYED_SECRET_SHAPES);
