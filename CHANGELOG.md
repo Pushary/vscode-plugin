@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.7
+
+- The bundled Pushary skill is 0.13.4, from 0.13.1. One `ask_user` or `wait_for_answer` call waits at most 48 seconds, the server's real limit; it said 55. A question still pending keeps waiting with the same `correlationId`.
+- When you ask the agent to call, phone or ring you if it gets stuck, it asks with `ask_user`. Pushary phones only when the reply includes `phoneCall`, and the agent does not promise a call otherwise. It tells you when the call rings in your own time (`ringsAtLocal`), not the UTC `ringsAt`.
+- A computer whose key works but has no phone connected pairs one with `npx pushary@latest pair`, which keeps this computer's key. The agent runs it in the background and shows you the link, the QR code and the fingerprint while it waits up to 15 minutes for your phone.
+- The gate uses the computer's id from `~/.pushary/machine-id` when it holds a valid UUID, the id the CLI and the Mac app use, so one computer no longer shows up as two. It only reads that file.
+- The gate sends a git worktree's main checkout as the repository too, so a rule saved for a repository, a deny included, also applies in its linked worktrees. A rule saved for one worktree still applies there. On Windows the gate recognises the worktrees Git for Windows creates by default.
+- The gate's redaction also hides the credential after `Authorization: Basic`, `Token`, `Negotiate` or `NTLM`, not only the scheme word, so a command that carries one shows `authorization: [redacted]`.
+
 ## 0.2.6
 
 - The bundled Pushary skill is 0.13.1. It gives the next step for each `status --json` exit code, lists every agent id setup accepts, and keeps the Mac app in charge of the agents it connected.
