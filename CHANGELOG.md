@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.8
+
+- When Pushary already has as many open questions in the session as it allows, the gate asks once instead of three times. The call then goes to VS Code's own confirmation with the reason ("Pushary has too many open questions in this session, so this was not sent to the phone. Approve it here."), or, under a rule that refuses when nobody answers, is refused with the reason. Before, the gate asked three times and refused every call with "Pushary could not create a verifiable approval".
+
 ## 0.2.7
 
 - The bundled Pushary skill is 0.13.4, from 0.13.1. One `ask_user` or `wait_for_answer` call waits at most 48 seconds, the server's real limit; it said 55. A question still pending keeps waiting with the same `correlationId`.

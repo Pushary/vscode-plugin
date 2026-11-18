@@ -83,13 +83,14 @@ const diag = (message) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), hi)
 
-const withRetry = async (fn, attempts) => {
+const withRetry = async (fn, attempts, shouldRetry) => {
   let lastError
   for (let i = 0; i < attempts; i += 1) {
     try {
       return await fn()
     } catch (error) {
       lastError = error
+      if (!shouldRetry(error)) break
       if (i < attempts - 1) await sleep(300 * (i + 1))
     }
   }
@@ -179,6 +180,23 @@ const parseMcpBody = (body, contentType) => {
   return JSON.parse(body)
 }
 
+const TOOL_FAILURE_META_KEY = 'pushary/failure'
+const QUESTION_LIMIT_FAILURE = 'question_limit'
+const QUESTION_LIMIT_REASON = 'Pushary already has as many open questions in this session as it allows, so nobody was asked about this and it did not run. Wait until the person answers or cancels one before trying it again.'
+const QUESTION_LIMIT_PROMPT_REASON = 'Pushary has too many open questions in this session, so this was not sent to the phone. Approve it here.'
+
+const toolFailureCodeOf = (result) => {
+  const code = result?._meta?.[TOOL_FAILURE_META_KEY]
+  return typeof code === 'string' ? code : null
+}
+
+const toolFailureOf = (name, result) =>
+  Object.assign(new Error(result?.content?.[0]?.text || `Pushary ${name} failed`), { failure: toolFailureCodeOf(result) })
+
+const isQuestionLimitRefusal = (error) => error?.failure === QUESTION_LIMIT_FAILURE
+
+const retriesUnlessTheQuestionLimitRefused = (error) => !isQuestionLimitRefusal(error)
+
 const callTool = async (apiKey, name, args, timeoutMs = NET_TIMEOUT_MS) => {
   const response = await fetch(MCP_URL, {
     method: 'POST',
@@ -194,6 +212,7 @@ const callTool = async (apiKey, name, args, timeoutMs = NET_TIMEOUT_MS) => {
   if (!response.ok) throw new Error(`Pushary MCP ${response.status}`)
   const rpc = parseMcpBody(text, response.headers.get('content-type'))
   if (rpc.error) throw new Error(rpc.error.message || 'Pushary MCP error')
+  if (rpc.result?.isError === true) throw toolFailureOf(name, rpc.result)
   const payload = rpc.result?.content?.[0]?.text
   if (!payload) throw new Error('empty Pushary response')
   return JSON.parse(payload)
@@ -470,7 +489,7 @@ const canonicalQuestion = (context) => ({
 // ask_user caps scopePath at SCOPE_PATH_MAX_LENGTH and blocker at
 // DECISION_LINE_MAX. The server derives a cwd-relative scope path that can be
 // longer than 200, so an over-length value must be DROPPED rather than sent:
-// ask_user rejects the whole call, this gate cannot parse the error, and the
+// ask_user rejects the whole call, the gate refuses it, and the
 // action fails closed. Dropping costs only the widening on approval.
 const SCOPE_PATH_MAX = 200
 const BLOCKER_MAX = 500
@@ -568,13 +587,21 @@ const handedOff = (asked) => asked.suppressed || asked.status === 'terminal' || 
 const handoffMessage = (asked) =>
   asked.suppressed ? 'You are at the keyboard, continue with the agent’s permissions.' : 'Continue with the agent’s permissions.'
 
+const refusesWhenUnanswered = ({ mode, timeoutAction }) => mode === 'push_only' && timeoutAction === 'deny'
+
+const askUser = (apiKey, args) => withRetry(() => callTool(apiKey, 'ask_user', args), 3, retriesUnlessTheQuestionLimitRefused)
+
+const questionLimitOutcome = (refusesUnanswered) =>
+  refusesUnanswered ? deny(QUESTION_LIMIT_REASON) : ask(QUESTION_LIMIT_PROMPT_REASON)
+
 // push_only: wait up to the policy timeout, then apply the timeout action.
 const handlePushOnly = async (apiKey, command, project, ident, timeoutSeconds, timeoutAction) => {
   let asked
   const args = { ...askArgs(command, project, ident), requestId: randomUUID() }
   try {
-    asked = await withRetry(() => callTool(apiKey, 'ask_user', args), 3)
-  } catch {
+    asked = await askUser(apiKey, args)
+  } catch (error) {
+    if (isQuestionLimitRefusal(error)) return questionLimitOutcome(refusesWhenUnanswered({ mode: 'push_only', timeoutAction }))
     return deny('Pushary could not create a verifiable approval. Retry the action.')
   }
   if (stopped(asked)) return deny(STOP_REASON)
@@ -624,8 +651,9 @@ const handlePushFirst = async (apiKey, command, project, ident, pushFirstSeconds
   let asked
   const args = { ...askArgs(command, project, ident), requestId: randomUUID() }
   try {
-    asked = await withRetry(() => callTool(apiKey, 'ask_user', args), 3)
-  } catch {
+    asked = await askUser(apiKey, args)
+  } catch (error) {
+    if (isQuestionLimitRefusal(error)) return questionLimitOutcome(refusesWhenUnanswered({ mode: 'push_first' }))
     return deny('Pushary could not create a verifiable approval. Retry the action.')
   }
   if (stopped(asked)) return deny(STOP_REASON)
