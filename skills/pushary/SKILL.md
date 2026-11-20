@@ -204,7 +204,7 @@ Asks a question and waits. Use `confirm` for yes or no, `select` for 2 to 6 know
 
 `timeoutMs` sets this call's wait, longer or shorter than the policy, up to 55000. Read `answered`; it is absent when you pass `wait: false`, which returns at once, normally with `status: "pending"`. When work that does not depend on the answer remains, pass `wait: false`, do that work, then poll with `wait_for_answer`.
 
-**Approvals.** Pass `toolName`, `toolTarget` (the command head) and the full command in `actionBody` whenever the question approves a tool call, and never leave them out to make a question approvable. When the command is destructive or ships something, such as a recursive delete, a force-push, a hard reset, a dropped or truncated table, `sudo`, or any deploy, publish or release, the phone offers only deny and `defer` ("Handle on your machine"). `defer` on any question means the user will decide at the computer: treat it as no answer and ask in the current client.
+**Approvals.** Pass `toolName`, `toolTarget` (the command head) and the full command in `actionBody` whenever the question approves a tool call, and never leave them out to make a question approvable. When the command is destructive or ships something, such as a recursive delete, a force-push, a hard reset, a dropped or truncated table, `sudo`, or any deploy, publish or release, the lock screen offers only deny, and the app approves it only after Face ID or the phone's passcode. Where the team requires the keyboard for risky steps, or the app is older than 1.0.66, the phone offers only deny and `defer` ("Handle on your machine"). `defer` on any question means the user will decide at the computer: treat it as no answer and ask in the current client.
 
 **Answers.** `value` is "yes" or "no" for confirm, the chosen option for select (or the user's own text when you passed `allowOther`), and the typed text for input. Read `note` too: a denial with a note carries the reason or a condition. A select or input value containing "yes" is answer data, not approval of a separate action.
 
@@ -297,7 +297,7 @@ Read-only. Shows your live agent sessions and any questions still waiting. If an
 
 | Surface | What the user can do |
 | --- | --- |
-| Mobile app | Answer confirm, select and input questions. Confirm notifications offer approve and deny on the lock screen, except for risky commands. Choices and text open the app. |
+| Mobile app | Answer confirm, select and input questions. Confirm notifications offer approve and deny on the lock screen, except for risky commands, which the app approves after Face ID or the passcode. Choices and text open the app. |
 | Mac notch | Answer confirm, select, input and question-set questions, including keyboard controls. |
 | Slack | Answer through buttons, menus or text modals when the integration and recipient are configured. |
 | Browser | Open the decision page as a fallback; browser notifications need permission. |
