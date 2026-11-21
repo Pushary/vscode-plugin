@@ -137,22 +137,24 @@ export const getMachineId = () => readSharedMachineId() ?? createHash('sha256').
 // silently stop finding the key the day the key alphabet widens, and the symptom
 // would be "approvals stopped working" with no error. Matches the Cursor gate.
 const KEY_SHAPE = /^pk_[a-z0-9]+\.[a-z0-9]+$/i
+const isPusharyKeyShaped = (value) => typeof value === 'string' && KEY_SHAPE.test(value)
 
 const resolveApiKey = () => {
   const fromEnv = process.env.PUSHARY_API_KEY?.trim()
-  if (fromEnv) return fromEnv
+  if (isPusharyKeyShaped(fromEnv)) return fromEnv
 
   try {
     const mcpPath = join(dirname(fileURLToPath(import.meta.url)), '..', '.mcp.json')
     const auth = JSON.parse(readFileSync(mcpPath, 'utf-8'))?.mcpServers?.pushary?.headers?.Authorization ?? ''
     const key = auth.replace(/^Bearer\s+/i, '').trim()
-    if (KEY_SHAPE.test(key)) return key
+    if (isPusharyKeyShaped(key)) return key
   } catch {}
 
   try {
     const configPath = process.env.PUSHARY_CONFIG_FILE?.trim() || join(homedir(), '.pushary', 'config.json')
-    const key = JSON.parse(readFileSync(configPath, 'utf-8'))?.apiKey
-    if (typeof key === 'string' && key.trim()) return key.trim()
+    const saved = JSON.parse(readFileSync(configPath, 'utf-8'))?.apiKey
+    const key = typeof saved === 'string' ? saved.trim() : undefined
+    if (isPusharyKeyShaped(key)) return key
   } catch {}
 
   return undefined

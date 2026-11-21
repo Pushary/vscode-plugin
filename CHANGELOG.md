@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.11
+
+- The gate no longer sends a `PUSHARY_API_KEY`, or a key in `~/.pushary/config.json`, that is not a Pushary key. A Pushary key is `pk_`, letters and digits, a dot, and more letters and digits. Any other value is ignored, as if it were not there: the gate reads the next place it looks for a key, the plugin's `.mcp.json` and then `~/.pushary/config.json`. With no Pushary key in any of them it treats Pushary as not configured, as before: reads still run, other gated tools go to VS Code's own confirmation, and it makes no request. A valid `PUSHARY_API_KEY` still wins.
+
 ## 0.2.10
 
 - `pushary` skill 0.13.6, from 0.13.5: a risky step, such as a recursive delete, a force-push or a deploy, is no longer described as deny-only on the phone. The Pushary app approves one from 1.0.66 after Face ID or the phone's passcode. The lock screen, an older app and a workspace that requires the keyboard for risky steps still offer only deny and `defer` ("Handle on your machine"). What an agent passes and how it reads `defer` are unchanged.
