@@ -35,13 +35,13 @@ There are three things.
 This installs the plugin, registers it with VS Code, and links your API key. It also sets up Claude Code, Codex, Cursor, and Hermes if you use them.
 
 ```bash
-npx pushary@latest setup
+npx -y pushary@latest setup
 ```
 
 To configure only VS Code:
 
 ```bash
-npx pushary@latest setup --agents vscode
+npx -y pushary@latest setup --agents vscode
 ```
 
 ### Option 2: Install from source
@@ -108,7 +108,7 @@ This repository uses the `.claude-plugin/plugin.json` layout, which VS Code, Git
 
 The layout is portable; this plugin is not meant to be. `hooks/hooks.json` uses VS Code's flat hook form, and the gate speaks VS Code's tool names, so treat this as a VS Code plugin that happens to sit in a portable folder shape.
 
-Claude Code users are served by `npx pushary@latest setup --agents claude_code`, which installs a hook built for Claude Code's own tool names and matcher format. Do not install this directory as a Claude Code plugin as well: at best it duplicates the MCP server, and the two installs would fight over the same approvals.
+Claude Code users are served by `npx -y pushary@latest setup --agents claude_code`, which installs a hook built for Claude Code's own tool names and matcher format. Do not install this directory as a Claude Code plugin as well: at best it duplicates the MCP server, and the two installs would fight over the same approvals.
 
 ## Development
 
