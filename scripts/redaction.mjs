@@ -57,3 +57,5 @@ export const redactSecrets = (text) => applyRedactionRules(SECRET_REDACTION_RULE
 export const containsCredentialToken = (text) => applyRedactionRules(CREDENTIAL_TOKEN_RULES, text) !== text;
 export const redactSecretsFromContent = (text) => applyRedactionRules(CUT_OFF_TEXT_REDACTION_RULES, text);
 export const redactSecretsDeep = (text) => redactSecrets(text).replace(HIGH_ENTROPY_RULE.pattern, HIGH_ENTROPY_RULE.replacement);
+const REDACTION_MARK = '[redacted';
+export const textCarriesARedaction = (text) => text.includes(REDACTION_MARK);

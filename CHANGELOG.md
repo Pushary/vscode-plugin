@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.13
+
+- The redaction script the gate uses is regenerated from the shared one. It gains one helper the gate does not call, so what the gate sends and blocks is unchanged.
+
 ## 0.2.12
 
 - `pushary` skill 0.13.7, from 0.13.6: every Pushary command it gives is written `npx -y pushary@latest …`, and `npx.cmd -y pushary@latest …` in PowerShell, so npm installs the CLI without stopping to ask "Ok to proceed? (y)".
