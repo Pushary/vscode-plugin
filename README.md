@@ -39,9 +39,9 @@ Each plan starts with a 3-day trial for new customers. During the trial, Agent, 
 | --- | --- | --- |
 | [Agent](https://pushary.com/pricing?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme) | $9.99 a month | One person and every AI agent they run. Approve, deny or answer from your phone or Mac. 10 call minutes a month. |
 | [Agent Pro](https://pushary.com/pricing?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme) | $19.99 a month | Everything in Agent, plus unlimited notifications, budgets and priority support. 20 call minutes a month. |
-| [Team](https://pushary.com/teams?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme) | $59 a month for 5 people, $12 for each extra person | A shared record of what your team's agents asked and who answered, with export. 60 call minutes a month. |
+| [Team](https://pushary.com/teams?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme) | $59 a month for 5 people, $12 for each extra person | Each person gets their own agent’s questions. On supported hooks, route a step such as a production deploy to the teammate who approves it. See who answered in the shared record. Includes export and 60 shared call minutes a month. |
 
-Missed the push? On those plans Pushary can call you, by default within a minute of the push, and read the request. Calls do not cover VS Code yet. They work for Claude Code, Codex, Gemini CLI and the other agents listed under [Phone calls](https://pushary.com/calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme). [How calls work](https://pushary.com/docs/agents/phone-calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme)
+VS Code approvals reach you by push. Answer the request on your phone and the waiting session gets your decision. Voice calls are available for other supported agents. [Phone calls](https://pushary.com/calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme). [How calls work](https://pushary.com/docs/agents/phone-calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme)
 
 ## Requirements
 
