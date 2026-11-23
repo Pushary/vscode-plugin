@@ -132,11 +132,7 @@ export const getMachineId = () => readSharedMachineId() ?? createHash('sha256').
 // so PUSHARY_API_KEY is frequently absent even when the user set it correctly.
 // Fall back to the key the CLI installer embeds in the sibling .mcp.json, then
 // to the key `pushary setup` writes to ~/.pushary/config.json.
-// Deliberately looser than API_KEY_PATTERN in @pushary/contracts (which is hex
-// only). This gate cannot import the workspace, so a strict copy here would
-// silently stop finding the key the day the key alphabet widens, and the symptom
-// would be "approvals stopped working" with no error. Matches the Cursor gate.
-const KEY_SHAPE = /^pk_[a-z0-9]+\.[a-z0-9]+$/i
+const KEY_SHAPE = /^pk_[a-f0-9]+\.[a-f0-9]+$/
 const isPusharyKeyShaped = (value) => typeof value === 'string' && KEY_SHAPE.test(value)
 
 const resolveApiKey = () => {

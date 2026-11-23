@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.14
+
+- The VS Code gate uses the configured Pushary key when the shell has a placeholder with characters outside the Pushary key alphabet.
+
 ## 0.2.13
 
 - The redaction script the gate uses is regenerated from the shared one. It gains one helper the gate does not call, so what the gate sends and blocks is unchanged.
