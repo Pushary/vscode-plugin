@@ -41,7 +41,7 @@ Each plan starts with a 3-day trial for new customers. During the trial, Agent, 
 | [Agent Pro](https://pushary.com/pricing?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme) | $19.99 a month | Everything in Agent, plus unlimited notifications, budgets and priority support. 20 call minutes a month. |
 | [Team](https://pushary.com/teams?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme) | $59 a month for 5 people, $12 for each extra person | A shared record of what your team's agents asked and who answered, with export. 60 call minutes a month. |
 
-Missed the push? On those plans Pushary can call you, by default a minute or two after the push, and read the request. Calls do not cover VS Code yet. They work for Claude Code, Codex, Gemini CLI and the other agents listed under [Phone calls](https://pushary.com/calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme). [How calls work](https://pushary.com/docs/agents/phone-calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme)
+Missed the push? On those plans Pushary can call you, by default within a minute of the push, and read the request. Calls do not cover VS Code yet. They work for Claude Code, Codex, Gemini CLI and the other agents listed under [Phone calls](https://pushary.com/calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme). [How calls work](https://pushary.com/docs/agents/phone-calls?utm_source=github&utm_medium=oss-adapter&utm_campaign=vscode-plugin&utm_content=readme)
 
 ## Requirements
 
